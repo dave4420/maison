@@ -15,11 +15,11 @@ build-type:          Simple
 -- extra-source-files:  
 cabal-version:       >=1.10
 
-executable maison
-  main-is:             Main.hs
+library
+  exposed-modules:     Http
   -- other-modules:       
   -- other-extensions:    
-  build-depends:       base >=4.6 && <4.7
+  build-depends:       base
                      , blaze-builder
                      , bytestring
                      , containers
@@ -29,10 +29,39 @@ executable maison
                      , text
                      , transformers
                      , wai == 2.0.*
-                     , warp == 2.0.*
   hs-source-dirs:      src
   default-language:    Haskell2010
   default-extensions:  OverloadedStrings
                      , TemplateHaskell
                      , RecordWildCards
+  GHC-Options:         -Wall -Werror
+
+executable maison
+  main-is:             Main.hs
+  -- other-modules:       
+  -- other-extensions:    
+  build-depends:       maison
+                     , base
+                     , warp == 2.0.*
+  hs-source-dirs:      maison
+  default-language:    Haskell2010
   GHC-Options:         -Wall -Werror -rtsopts -with-rtsopts=-T -threaded
+
+test-suite tests
+  type:                exitcode-stdio-1.0
+  main-is:             Main.hs
+  build-depends:       maison
+                     , base
+                     , bytestring
+                     , HUnit
+                     , QuickCheck == 2.*
+                     , quickcheck-io
+                     , test-framework
+                     , test-framework-quickcheck2
+                     , test-framework-th
+                     , wai == 2.0.*
+                     , wai-test == 2.0.*
+  hs-source-dirs:      tests
+  default-language:    Haskell2010
+  default-extensions:  TemplateHaskell, OverloadedStrings
+  GHC-Options:         -Wall -Werror
