@@ -32,6 +32,7 @@ import           Data.Text (Text)
 
 -- transformers
 import           Control.Monad.Trans.Class
+import           Control.Monad.Trans.Reader
 
 -- wai
 import qualified Network.Wai               as WAI
@@ -65,9 +66,10 @@ lookupSite :: Authority -> Sites -> Maybe Site
 lookupSite authority (Sites sites) = sites ^. L.at authority
 
 
-newtype Site = Site ([Text] -> HTTP.Query -> IO Resource)
+newtype Site' m = Site ([Text] -> HTTP.Query -> m Resource)
+type Site = Site' IO
 
-retrieveResource :: Site -> [Text] -> HTTP.Query -> IO Resource
+retrieveResource :: Monad m => Site' m -> [Text] -> HTTP.Query -> m Resource
 retrieveResource (Site site) = site
 
 
@@ -84,48 +86,66 @@ type MissingResource = ()
 type ExistingResource = ()
 
 
+newtype HttpT m a = HttpT (EitherT UglyStatus (ReaderT WAI.Request m) a)
+    deriving (Functor, Applicative, Monad)
+
+instance MonadTrans HttpT where
+        lift = HttpT . lift . lift
+
+data UglyStatus = UglyStatus HTTP.ResponseHeaders HTTP.Status
+
+runHttpT :: Monad m =>
+            (UglyStatus -> ReaderT WAI.Request m a) ->
+            HttpT m a ->
+            WAI.Request ->
+            m a
+runHttpT ugly (HttpT act) = runReaderT (eitherT ugly return act)
+
+asksRequest :: Monad m => (WAI.Request -> a) -> HttpT m a
+asksRequest f = HttpT . lift $ asks f
+
+oops :: Monad m => HTTP.Status -> HttpT m a
+oops = oops' []
+
+oops' :: Monad m => HTTP.ResponseHeaders -> HTTP.Status -> HttpT m a
+oops' headers status = HttpT . left $ UglyStatus headers status
+
+defaultUgly :: Monad m => UglyStatus -> ReaderT WAI.Request m WAI.Response
+defaultUgly (UglyStatus headers status) = do
+        method <- asks WAI.requestMethod
+        return . WAI.responseBuilder status headers $ case method of
+                "HEAD" -> mempty
+                _      -> Z.fromByteString $ HTTP.statusMessage status
+
+
 waiApplicationFromSites :: Sites -> WAI.Application
 {- ^ Formalisation of
 <http://upload.wikimedia.org/wikipedia/commons/8/8a/Http-headers-status.svg>.
 -}
-waiApplicationFromSites sites request = eitherT return return $ do
+waiApplicationFromSites sites = runHttpT defaultUgly (httpMain sites)
+
+
+httpMain :: Sites -> HttpT IO WAI.Response
+httpMain sites = do
 
         authority
-         <- fmap parseAuthority
-            . hoistEither
-            . note (oops HTTP.badRequest400)
-            . WAI.requestHeaderHost
-            $ request
+         <- maybe (oops HTTP.badRequest400) (return . parseAuthority)
+            =<< asksRequest WAI.requestHeaderHost
 
         site
-         <- hoistEither
-            . note (oops HTTP.badRequest400)
+         <- maybe (oops HTTP.badRequest400) return
             $ flip lookupSite sites =<< authority
 
         _method
-         <- hoistEither
-            . note (oops HTTP.notImplemented501)
-            $ uncheckedMethod
+         <- maybe (oops HTTP.notImplemented501) return
+            =<< asksRequest (parseMethod . WAI.requestMethod)
 
-        let handleMissingResource _ = return (oops HTTP.notFound404)
+        let handleMissingResource _ = oops HTTP.notFound404
 
-        let handleExistingResource _
-                = return (oops HTTP.internalServerError500)
+        let handleExistingResource _resource = oops HTTP.internalServerError500
 
         either handleMissingResource handleExistingResource
             =<< lift
-                ((retrieveResource site
-                  <$> WAI.pathInfo
-                  <*> WAI.queryString)
-                 request)
-
-    where
-
-        uncheckedMethod = parseMethod $ WAI.requestMethod request
-
-        oops = oops' []
-        oops' headers status = WAI.responseBuilder status headers body where
-                body = case uncheckedMethod of
-                        Just HEAD -> mempty
-                        _         -> Z.fromByteString
-                                     $ HTTP.statusMessage status
+            =<< asksRequest (retrieveResource site
+                             <$> WAI.pathInfo
+                             <*> WAI.queryString)
