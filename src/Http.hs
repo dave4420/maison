@@ -56,24 +56,27 @@ parseAuthority bsAuth = do
         return Authority{..}
 
 
-newtype Sites = Sites (Map Authority Site)
+newtype Sites' m = Sites (Map Authority (Site' m))
+type Sites = Sites' IO
 
-instance Monoid Sites where
+instance Monoid (Sites' m) where
         mempty = Sites mempty
         mappend (Sites x) (Sites y) = Sites (x <> y)
 
-lookupSite :: Authority -> Sites -> Maybe Site
+lookupSite :: Authority -> (Sites' m) -> Maybe (Site' m)
 lookupSite authority (Sites sites) = sites ^. L.at authority
 
 
-newtype Site' m = Site ([Text] -> HTTP.Query -> m Resource)
+newtype Site' m = Site ([Text] -> HTTP.Query -> m (Resource' m))
 type Site = Site' IO
 
-retrieveResource :: Monad m => Site' m -> [Text] -> HTTP.Query -> m Resource
+retrieveResource :: Monad m =>
+                    Site' m -> [Text] -> HTTP.Query -> m (Resource' m)
 retrieveResource (Site site) = site
 
 
 data Method = HEAD | GET
+    deriving Eq
 
 parseMethod :: ByteString -> Maybe Method
 parseMethod "HEAD" = Just HEAD
@@ -81,9 +84,31 @@ parseMethod "GET"  = Just GET
 parseMethod _      = Nothing
 
 
-type Resource = Either MissingResource ExistingResource
-type MissingResource = ()
-type ExistingResource = ()
+type Resource = Resource' IO
+type MissingResource = MissingResource' IO
+type ExistingResource = ExistingResource' IO
+type Resource' m = Either (MissingResource' m) (ExistingResource' m)
+
+data MissingResource' m = MissingResource {
+        todoFixMe :: m ()}
+
+data ExistingResource' m = ExistingResource {
+        existingGet :: Maybe (m ([ExtraHeader], Entity))}
+
+
+data ExtraHeader = ExtraHeader HTTP.Header
+
+unExtraHeader :: ExtraHeader -> HTTP.ResponseHeaders
+unExtraHeader = \case
+        ExtraHeader header -> [header]
+
+data Entity = Entity {
+        entityType :: ByteString,
+        entityBody :: EntityBody}
+
+data EntityBody
+        = EntityBodyFromFile FilePath (Maybe WAI.FilePart)
+        | EntityBodyFromBuilder Z.Builder
 
 
 newtype HttpT m a = HttpT (EitherT UglyStatus (ReaderT WAI.Request m) a)
@@ -125,7 +150,7 @@ waiApplicationFromSites :: Sites -> WAI.Application
 waiApplicationFromSites sites = runHttpT defaultUgly (httpMain sites)
 
 
-httpMain :: Sites -> HttpT IO WAI.Response
+httpMain :: Monad m => Sites' m -> HttpT m WAI.Response
 httpMain sites = do
 
         authority
@@ -136,16 +161,44 @@ httpMain sites = do
          <- maybe (oops HTTP.badRequest400) return
             $ flip lookupSite sites =<< authority
 
-        _method
+        method
          <- maybe (oops HTTP.notImplemented501) return
             =<< asksRequest (parseMethod . WAI.requestMethod)
 
-        let handleMissingResource _ = oops HTTP.notFound404
-
-        let handleExistingResource _resource = oops HTTP.internalServerError500
-
-        either handleMissingResource handleExistingResource
+        (either <$> handleMissingResource <*> handleExistingResource) method
             =<< lift
             =<< asksRequest (retrieveResource site
                              <$> WAI.pathInfo
                              <*> WAI.queryString)
+
+
+handleMissingResource
+        :: Monad m => Method -> MissingResource' m -> HttpT m WAI.Response
+handleMissingResource _method _resource = oops HTTP.notFound404
+
+
+handleExistingResource
+        :: Monad m => Method -> ExistingResource' m -> HttpT m WAI.Response
+handleExistingResource method resource = do
+        --TODO: caching preconditions
+        (extraHeaders, entity)
+         <- maybe (oops HTTP.methodNotAllowed405) lift $ case method of
+                GET -> existingGet resource
+                       --TODO: range requests
+                HEAD -> existingGet resource
+                        --TODO: early return for HEAD
+        --TODO: content negotiation
+        return $ waiResponse (method == HEAD) HTTP.ok200 extraHeaders entity
+
+
+waiResponse :: Bool -> HTTP.Status -> [ExtraHeader] -> Entity -> WAI.Response
+waiResponse omitBody status extraHeaders Entity{..}
+        | omitBody  = WAI.responseBuilder status headers mempty
+        | otherwise = case entityBody of
+                EntityBodyFromFile nf part
+                 -> WAI.responseFile status headers nf part
+                EntityBodyFromBuilder builder
+                 -> WAI.responseBuilder status headers builder
+    where
+        headers = concatMap unExtraHeader extraHeaders
+                  ++ [(HTTP.hContentType, entityType)]

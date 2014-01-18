@@ -36,6 +36,7 @@ library
                      , RecordWildCards
                      , DeriveFunctor
                      , GeneralizedNewtypeDeriving
+                     , LambdaCase
   GHC-Options:         -Wall -Werror
 
 executable maison
