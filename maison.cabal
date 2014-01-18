@@ -45,9 +45,13 @@ executable maison
   -- other-extensions:    
   build-depends:       maison
                      , base
+                     , blaze-builder
+                     , text == 1.0.*
                      , warp == 2.0.*
   hs-source-dirs:      maison
   default-language:    Haskell2010
+  default-extensions:  RecordWildCards
+                     , OverloadedStrings
   GHC-Options:         -Wall -Werror -rtsopts -with-rtsopts=-T -threaded
 
 test-suite tests

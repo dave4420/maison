@@ -16,6 +16,7 @@ import qualified Data.ByteString.Char8     as BC
 
 -- containers
 import           Data.Map (Map)
+import qualified Data.Map                  as M
 
 -- errors
 import           Control.Error
@@ -66,6 +67,9 @@ instance Monoid (Sites' m) where
 lookupSite :: Authority -> (Sites' m) -> Maybe (Site' m)
 lookupSite authority (Sites sites) = sites ^. L.at authority
 
+singleSite :: Monad m => Authority -> Site' m -> Sites' m
+singleSite authority site = Sites $ M.singleton authority site
+
 
 newtype Site' m = Site ([Text] -> HTTP.Query -> m (Resource' m))
 type Site = Site' IO
@@ -89,11 +93,16 @@ type MissingResource = MissingResource' IO
 type ExistingResource = ExistingResource' IO
 type Resource' m = Either (MissingResource' m) (ExistingResource' m)
 
-data MissingResource' m = MissingResource {
-        todoFixMe :: m ()}
+data MissingResource' m = MissingResource (m ())
 
 data ExistingResource' m = ExistingResource {
         existingGet :: Maybe (m ([ExtraHeader], Entity))}
+
+defaultMissingResource :: Monad m => MissingResource' m
+defaultMissingResource = MissingResource (return ())
+
+defaultExistingResource :: Monad m => ExistingResource' m
+defaultExistingResource = ExistingResource Nothing
 
 
 data ExtraHeader = ExtraHeader HTTP.Header
