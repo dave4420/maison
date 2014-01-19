@@ -30,6 +30,7 @@ import           Control.Lens.Operators
 
 -- text
 import           Data.Text (Text)
+import qualified Data.Text.Encoding        as T
 
 -- transformers
 import           Control.Monad.Trans.Class
@@ -118,6 +119,12 @@ data Entity = Entity {
 data EntityBody
         = EntityBodyFromFile FilePath (Maybe WAI.FilePart)
         | EntityBodyFromBuilder Z.Builder
+
+entityBodyFromStrictText :: Text -> EntityBody
+entityBodyFromStrictText = entityBodyFromStrictByteString . T.encodeUtf8
+
+entityBodyFromStrictByteString :: ByteString -> EntityBody
+entityBodyFromStrictByteString = EntityBodyFromBuilder . Z.fromByteString
 
 
 newtype HttpT m a = HttpT (EitherT UglyStatus (ReaderT WAI.Request m) a)

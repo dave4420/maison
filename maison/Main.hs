@@ -1,12 +1,8 @@
 -- import maison
 import           Http
 
--- blaze-builder
-import qualified Blaze.ByteString.Builder  as Z
-
 -- text
 import           Data.Text (Text)
-import qualified Data.Text.Encoding        as T
 
 -- warp
 import qualified Network.Wai.Handler.Warp  as WARP
@@ -32,5 +28,4 @@ yield message = (defaultExistingResource :: ExistingResource)
     where
         get = return ([], Entity{..})
         entityType = "text/plain; charset=utf-8"
-        entityBody = EntityBodyFromBuilder . Z.fromByteString . T.encodeUtf8
-                     $ message
+        entityBody = entityBodyFromStrictText message
