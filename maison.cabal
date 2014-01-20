@@ -46,7 +46,10 @@ executable maison
   build-depends:       maison
                      , base
                      , blaze-builder
+                     , hledger-lib
+                     , old-locale
                      , text == 1.0.*
+                     , time
                      , warp == 2.0.*
   hs-source-dirs:      maison
   default-language:    Haskell2010

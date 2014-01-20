@@ -1,8 +1,7 @@
--- import maison
-import           Http
+import           Ledger
 
--- text
-import           Data.Text (Text)
+-- maison
+import           Http
 
 -- warp
 import qualified Network.Wai.Handler.Warp  as WARP
@@ -14,18 +13,5 @@ main = WARP.runSettings WARP.defaultSettings
        $ sites
 
 sites :: Sites
-sites = singleSite (Authority "dionysus" . Just . Just $ 3000) site
-
-site :: Site
-site = Site $ \path _query -> return $ case path of
-        [] -> Right . yield $ "Oh no!"
-        [""] -> Right . yield $ "Fantastic!"
-        _ -> Left defaultMissingResource
-
-yield :: Text -> ExistingResource
-yield message = (defaultExistingResource :: ExistingResource)
-                {existingGet = Just get}
-    where
-        get = return ([], Entity{..})
-        entityType = "text/plain; charset=utf-8"
-        entityBody = entityBodyFromStrictText message
+sites = singleSite (Authority "dionysus" . Just . Just $ 3000)
+        $ ledgerSite "/home/dave/notes/102-richmond-road.journal"
