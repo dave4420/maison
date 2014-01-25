@@ -53,18 +53,13 @@ ledgerSite nf = Site $ \path _query -> case path of
 
 
 balances :: LEDGER.Journal -> IO ([ExtraHeader], Entity)
-balances journal = return ([], Entity{..}) where
+balances journal = return ([], entityFromHtml html) where
         report = LEDGER.balanceReport
                  LEDGER.defreportopts {LEDGER.flat_ = True,
                                        LEDGER.empty_ = True}
                  LEDGER.Any --(LEDGER.Empty True)
                  journal
-        entityType = "text/html; charset=utf-8"
-        entityBody = entityBodyFromHtml
-                     . HT.table
-                     . mconcat
-                     . map row
-                     $ fst report
+        html = HT.table . mconcat . map row $ fst report
         row :: LEDGER.BalanceReportItem -> Html
         row (fullName, _shortName, _indent, amount)
                 = HT.tr
@@ -81,21 +76,19 @@ balances journal = return ([], Entity{..}) where
 
 
 transactions :: LEDGER.Journal -> String -> IO ([ExtraHeader], Entity)
-transactions journal acName = return ([], Entity{..}) where
+transactions journal acName = return ([], entityFromHtml html) where
         report = LEDGER.postingsReport
                  LEDGER.defreportopts {LEDGER.flat_ = True}
                  (LEDGER.Acct acName)
                  journal
-        entityType = "text/html; charset=utf-8"
-        entityBody = entityBodyFromHtml
-                     . HT.table
-                     . mconcat
-                     . (HT.tr (F.foldMap (HT.td ! AT.style "text-align:right" $)
-                               ["", "", "Credits", "Debits", "Balance"])
-                        :)
-                     . map row
-                     . reverse
-                     $ snd report
+        html = HT.table
+               . mconcat
+               . (HT.tr (F.foldMap (HT.td ! AT.style "text-align:right" $)
+                         ["", "", "Credits", "Debits", "Balance"])
+                  :)
+               . map row
+               . reverse
+               $ snd report
         row :: LEDGER.PostingsReportItem -> Html
         row (when, what, LEDGER.Posting {pamount = pamount}, amount)
                 = HT.tr

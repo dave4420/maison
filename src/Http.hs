@@ -130,8 +130,10 @@ entityBodyFromStrictText = entityBodyFromStrictByteString . T.encodeUtf8
 entityBodyFromStrictByteString :: ByteString -> EntityBody
 entityBodyFromStrictByteString = EntityBodyFromBuilder . Z.fromByteString
 
-entityBodyFromHtml :: ZH.Html -> EntityBody
-entityBodyFromHtml = EntityBodyFromBuilder . ZH.renderHtmlBuilder
+entityFromHtml :: ZH.Html -> Entity
+entityFromHtml html = Entity{..} where
+        entityType = "text/html; charset=utf-8"
+        entityBody = EntityBodyFromBuilder (ZH.renderHtmlBuilder html)
 
 
 newtype HttpT m a = HttpT (EitherT UglyStatus (ReaderT WAI.Request m) a)
