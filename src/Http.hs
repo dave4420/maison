@@ -7,30 +7,34 @@ import           Data.Char
 import           Data.Monoid
 
 -- blaze-builder
-import qualified Blaze.ByteString.Builder  as Z
+import qualified Blaze.ByteString.Builder      as Z
+
+-- blaze-html
+import qualified Text.Blaze.Html               as ZH
+import qualified Text.Blaze.Html.Renderer.Utf8 as ZH
 
 -- bytestring
 import           Data.ByteString (ByteString)
-import qualified Data.ByteString           as B
-import qualified Data.ByteString.Char8     as BC
+import qualified Data.ByteString               as B
+import qualified Data.ByteString.Char8         as BC
 
 -- containers
 import           Data.Map (Map)
-import qualified Data.Map                  as M
+import qualified Data.Map                      as M
 
 -- errors
 import           Control.Error
 
 -- http-types
-import qualified Network.HTTP.Types        as HTTP
+import qualified Network.HTTP.Types            as HTTP
 
 -- lens
-import qualified Control.Lens              as L
+import qualified Control.Lens                  as L
 import           Control.Lens.Operators
 
 -- text
 import           Data.Text (Text)
-import qualified Data.Text.Encoding        as T
+import qualified Data.Text.Encoding            as T
 
 -- transformers
 import           Control.Monad.Trans.Class
@@ -125,6 +129,9 @@ entityBodyFromStrictText = entityBodyFromStrictByteString . T.encodeUtf8
 
 entityBodyFromStrictByteString :: ByteString -> EntityBody
 entityBodyFromStrictByteString = EntityBodyFromBuilder . Z.fromByteString
+
+entityBodyFromHtml :: ZH.Html -> EntityBody
+entityBodyFromHtml = EntityBodyFromBuilder . ZH.renderHtmlBuilder
 
 
 newtype HttpT m a = HttpT (EitherT UglyStatus (ReaderT WAI.Request m) a)

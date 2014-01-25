@@ -21,6 +21,7 @@ library
   -- other-extensions:    
   build-depends:       base
                      , blaze-builder
+                     , blaze-html == 0.7.*
                      , bytestring
                      , containers
                      , errors == 1.4.*
@@ -45,7 +46,7 @@ executable maison
   -- other-extensions:    
   build-depends:       maison
                      , base
-                     , blaze-builder
+                     , blaze-html
                      , hledger-lib
                      , old-locale
                      , text == 1.0.*

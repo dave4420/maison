@@ -1,12 +1,17 @@
 module Ledger (ledgerSite) where
 
 -- base
-import           Control.Applicative
-import qualified Data.Foldable          as F
+import qualified Data.Foldable               as F
 import           Data.Monoid
+import           Data.String
+
+-- blaze-html
+import           Text.Blaze.Html
+import qualified Text.Blaze.Html5            as HT
+import qualified Text.Blaze.Html5.Attributes as AT
 
 -- hledger-lib
-import qualified Hledger                as LEDGER
+import qualified Hledger                     as LEDGER
 
 -- maison
 import           Http
@@ -15,7 +20,6 @@ import           Http
 import           System.Locale
 
 -- text
-import           Data.Text (Text)
 import qualified Data.Text              as T
 
 -- time
@@ -51,22 +55,27 @@ ledgerSite nf = Site $ \path _query -> case path of
 balances :: LEDGER.Journal -> IO ([ExtraHeader], Entity)
 balances journal = return ([], Entity{..}) where
         report = LEDGER.balanceReport
-                 LEDGER.defreportopts {LEDGER.flat_ = True, LEDGER.empty_ = True}
+                 LEDGER.defreportopts {LEDGER.flat_ = True,
+                                       LEDGER.empty_ = True}
                  LEDGER.Any --(LEDGER.Empty True)
                  journal
         entityType = "text/html; charset=utf-8"
-        entityBody = entityBodyFromStrictText
-                     . htmlElement "table"
+        entityBody = entityBodyFromHtml
+                     . HT.table
+                     . mconcat
                      . map row
                      $ fst report
-        row :: LEDGER.BalanceReportItem -> Text
+        row :: LEDGER.BalanceReportItem -> Html
         row (fullName, _shortName, _indent, amount)
-                = htmlElement "tr"
-                  [td [alignLeft] . pure
-                   $ aHref . ("./" <>) <*> pure
-                     $ T.pack fullName,
-                   td [alignRight] [balance],
-                   td [alignLeft] [tag]]
+                = HT.tr
+                  . mconcat
+                  $ [HT.td ! AT.style "text-align:left"
+                     $ HT.a ! AT.href (fromString $ "./" ++ fullName)
+                       $ fromString fullName,
+                     HT.td ! AT.style "text-align:right"
+                     $ balance,
+                     HT.td ! AT.style "text-align:left"
+                     $ tag]
             where
                 (balance, tag) = formatAmountWithTag amount
 
@@ -78,69 +87,56 @@ transactions journal acName = return ([], Entity{..}) where
                  (LEDGER.Acct acName)
                  journal
         entityType = "text/html; charset=utf-8"
-        entityBody = entityBodyFromStrictText
-                     . htmlElement "table"
-                     . (htmlElement "tr" (map (td [alignRight] . pure)
-                                          ["", "", "Credits", "Debits", "Balance"])
+        entityBody = entityBodyFromHtml
+                     . HT.table
+                     . mconcat
+                     . (HT.tr (F.foldMap (HT.td ! AT.style "text-align:right" $)
+                               ["", "", "Credits", "Debits", "Balance"])
                         :)
                      . map row
                      . reverse
                      $ snd report
-        row :: LEDGER.PostingsReportItem -> Text
+        row :: LEDGER.PostingsReportItem -> Html
         row (when, what, LEDGER.Posting {pamount = pamount}, amount)
-                = htmlElement "tr"
-                  [td [alignLeft] [maybe "" (T.pack . formatTime defaultTimeLocale "%e %B %Y") when],
-                   td [alignLeft] [maybe "" T.pack what],
-                   td [alignRight] [tshowNonZeroMixedAmount . negate
-                                    $ filterAmount isCredit pamount],
-                   td [alignRight] [tshowNonZeroMixedAmount
-                                    $ filterAmount isDebit pamount],
-                   td [alignRight] [balance],
-                   td [alignLeft] [tag]]
+                = HT.tr
+                  . mconcat
+                  $ [HT.td ! AT.style "text-align:left"
+                     $ maybe "" (fromString . fmtDate) when,
+                     HT.td ! AT.style "text-align:left"
+                     $ maybe "" fromString what,
+                     HT.td ! AT.style "text-align:right"
+                     $ tshowNonZeroMixedAmount (negate
+                                               $ filterAmount isCredit pamount),
+                     HT.td ! AT.style "text-align:right"
+                     $ tshowNonZeroMixedAmount (filterAmount isDebit pamount),
+                     HT.td ! AT.style "text-align:right" $ balance,
+                     HT.td ! AT.style "text-align:left" $ tag]
             where
                 (balance, tag) = formatAmountWithTag amount
+                fmtDate = formatTime defaultTimeLocale "%e %B %Y"
 
 
-formatAmountWithTag :: LEDGER.MixedAmount -> (Text, Text)
+formatAmountWithTag :: LEDGER.MixedAmount -> (Html, Html)
 formatAmountWithTag amount
-        | allAmount isCredit amount       = (tshowMixedAmount $ negate amount, "CR")
+        | allAmount isCredit amount       = (tshowMixedAmount $ negate amount,
+                                             "CR")
         | allAmount isDebit amount        = (tshowMixedAmount amount, "DR")
         | LEDGER.isZeroMixedAmount amount = ("0", "")
         | otherwise                       = (tshowMixedAmount amount, "DR?")
 
-tshowMixedAmount, tshowNonZeroMixedAmount :: LEDGER.MixedAmount -> Text
-tshowMixedAmount = T.pack . LEDGER.showMixedAmount
+tshowMixedAmount, tshowNonZeroMixedAmount
+        :: IsString a => LEDGER.MixedAmount -> a
+tshowMixedAmount = fromString . LEDGER.showMixedAmount
 tshowNonZeroMixedAmount (LEDGER.Mixed []) = ""
 tshowNonZeroMixedAmount amount            = tshowMixedAmount amount
 
 allAmount :: (LEDGER.Amount -> Bool) -> LEDGER.MixedAmount -> Bool
 allAmount p (LEDGER.Mixed amounts) = all p amounts
 
-filterAmount :: (LEDGER.Amount -> Bool) -> LEDGER.MixedAmount -> LEDGER.MixedAmount
+filterAmount
+        :: (LEDGER.Amount -> Bool) -> LEDGER.MixedAmount -> LEDGER.MixedAmount
 filterAmount p (LEDGER.Mixed amounts) = LEDGER.Mixed (filter p amounts)
 
 isCredit, isDebit :: LEDGER.Amount -> Bool
 isCredit LEDGER.Amount{..} = aquantity < 0
 isDebit  LEDGER.Amount{..} = 0 < aquantity
-
-
-aHref :: Text -> [Text] -> Text
-aHref href = htmlElement' "a" [(Just "href", href)]
-
-td :: [(Maybe Text, Text)] -> [Text] -> Text
-td = htmlElement' "td"
-
-alignLeft, alignRight :: (Maybe Text, Text)
-alignLeft = (Just "align", "left")
-alignRight = (Just "align", "right")
-
-htmlElement :: Text -> [Text] -> Text
-htmlElement = flip htmlElement' []
-
-htmlElement' :: Text -> [(Maybe Text, Text)] -> [Text] -> Text
-htmlElement' tag attrs body
-        = (mconcat . concat)
-          [["<", tag, F.foldMap attr attrs, ">"], body, ["</", tag, ">"]]
-    where
-        attr (Nothing, value) = " " <> value
-        attr (Just name, value) = mconcat [" ", name, "=\"", value, "\""]
