@@ -52,8 +52,8 @@ ledgerSite nf = Site $ \path _query -> case path of
         found = defaultExistingResource :: ExistingResource
 
 
-balances :: LEDGER.Journal -> IO ([ExtraHeader], Entity)
-balances journal = return ([], entityFromHtml html) where
+balances :: LEDGER.Journal -> IO Entity
+balances journal = return $ entityFromHtml html where
         report = LEDGER.balanceReport
                  LEDGER.defreportopts {LEDGER.flat_ = True,
                                        LEDGER.empty_ = True}
@@ -75,8 +75,8 @@ balances journal = return ([], entityFromHtml html) where
                 (balance, tag) = formatAmountWithTag amount
 
 
-transactions :: LEDGER.Journal -> String -> IO ([ExtraHeader], Entity)
-transactions journal acName = return ([], entityFromHtml html) where
+transactions :: LEDGER.Journal -> String -> IO Entity
+transactions journal acName = return $ entityFromHtml html where
         report = LEDGER.postingsReport
                  LEDGER.defreportopts {LEDGER.flat_ = True}
                  (LEDGER.Acct acName)

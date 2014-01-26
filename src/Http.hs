@@ -101,7 +101,7 @@ type Resource' m = Either (MissingResource' m) (ExistingResource' m)
 data MissingResource' m = MissingResource (m ())
 
 data ExistingResource' m = ExistingResource {
-        existingGet :: Maybe (m ([ExtraHeader], Entity))}
+        existingGet :: Maybe (m Entity)}
 
 defaultMissingResource :: Monad m => MissingResource' m
 defaultMissingResource = MissingResource (return ())
@@ -117,6 +117,7 @@ unExtraHeader = \case
         ExtraHeader header -> [header]
 
 data Entity = Entity {
+        entityExtraHeaders :: [ExtraHeader],
         entityType :: ByteString,
         entityBody :: EntityBody}
 
@@ -124,14 +125,19 @@ data EntityBody
         = EntityBodyFromFile FilePath (Maybe WAI.FilePart)
         | EntityBodyFromBuilder Z.Builder
 
-entityBodyFromStrictText :: Text -> EntityBody
-entityBodyFromStrictText = entityBodyFromStrictByteString . T.encodeUtf8
+entityFromStrictText :: ByteString -> Text -> Entity
+entityFromStrictText contentType body
+        = entityFromStrictByteString (contentType <> "; charset=utf-8")
+                                     (T.encodeUtf8 body)
 
-entityBodyFromStrictByteString :: ByteString -> EntityBody
-entityBodyFromStrictByteString = EntityBodyFromBuilder . Z.fromByteString
+entityFromStrictByteString :: ByteString -> ByteString -> Entity
+entityFromStrictByteString entityType body = Entity{..} where
+        entityExtraHeaders = []
+        entityBody = EntityBodyFromBuilder (Z.fromByteString body)
 
 entityFromHtml :: ZH.Html -> Entity
 entityFromHtml html = Entity{..} where
+        entityExtraHeaders = []
         entityType = "text/html; charset=utf-8"
         entityBody = EntityBodyFromBuilder (ZH.renderHtmlBuilder html)
 
@@ -206,18 +212,18 @@ handleExistingResource
         :: Monad m => Method -> ExistingResource' m -> HttpT m WAI.Response
 handleExistingResource method resource = do
         --TODO: caching preconditions
-        (extraHeaders, entity)
+        entity
          <- maybe (oops HTTP.methodNotAllowed405) lift $ case method of
                 GET -> existingGet resource
                        --TODO: range requests
                 HEAD -> existingGet resource
                         --TODO: early return for HEAD
         --TODO: content negotiation
-        return $ waiResponse (method == HEAD) HTTP.ok200 extraHeaders entity
+        return $ waiResponse (method == HEAD) HTTP.ok200 entity
 
 
-waiResponse :: Bool -> HTTP.Status -> [ExtraHeader] -> Entity -> WAI.Response
-waiResponse omitBody status extraHeaders Entity{..}
+waiResponse :: Bool -> HTTP.Status -> Entity -> WAI.Response
+waiResponse omitBody status Entity{..}
         | omitBody  = WAI.responseBuilder status headers mempty
         | otherwise = case entityBody of
                 EntityBodyFromFile nf part
@@ -225,5 +231,5 @@ waiResponse omitBody status extraHeaders Entity{..}
                 EntityBodyFromBuilder builder
                  -> WAI.responseBuilder status headers builder
     where
-        headers = concatMap unExtraHeader extraHeaders
+        headers = concatMap unExtraHeader entityExtraHeaders
                   ++ [(HTTP.hContentType, entityType)]
