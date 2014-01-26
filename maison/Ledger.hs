@@ -1,7 +1,9 @@
 module Ledger (ledgerSite) where
 
 -- base
+import           Control.Arrow
 import qualified Data.Foldable               as F
+import           Data.List
 import           Data.Monoid
 import           Data.String
 
@@ -53,13 +55,16 @@ ledgerSite nf = Site $ \path _query -> case path of
 
 
 balances :: LEDGER.Journal -> IO Entity
-balances journal = return $ entityFromHtml html where
+balances journal
+        = return . entityFromHtml . html5Page title $ nav <> table
+    where
+        (title, nav) = titleNav [] "102 Richmond Road Accounts"
         report = LEDGER.balanceReport
                  LEDGER.defreportopts {LEDGER.flat_ = True,
                                        LEDGER.empty_ = True}
-                 LEDGER.Any --(LEDGER.Empty True)
+                 LEDGER.Any
                  journal
-        html = HT.table . mconcat . map row $ fst report
+        table = HT.table . mconcat . map row $ fst report
         row :: LEDGER.BalanceReportItem -> Html
         row (fullName, _shortName, _indent, amount)
                 = HT.tr
@@ -76,19 +81,24 @@ balances journal = return $ entityFromHtml html where
 
 
 transactions :: LEDGER.Journal -> String -> IO Entity
-transactions journal acName = return $ entityFromHtml html where
+transactions journal acName
+        = return . entityFromHtml . html5Page title
+          $ nav <> table
+    where
+        (title, nav) = titleNav [("102 Richmond Road Accounts", "./")]
+                                (fromString acName)
         report = LEDGER.postingsReport
                  LEDGER.defreportopts {LEDGER.flat_ = True}
                  (LEDGER.Acct acName)
                  journal
-        html = HT.table
-               . mconcat
-               . (HT.tr (F.foldMap (HT.td ! AT.style "text-align:right" $)
-                         ["", "", "Credits", "Debits", "Balance"])
-                  :)
-               . map row
-               . reverse
-               $ snd report
+        table = HT.table
+                . mconcat
+                . (HT.tr (F.foldMap (HT.td ! AT.style "text-align:right" $)
+                          ["", "", "Credits", "Debits", "Balance"])
+                   :)
+                . map row
+                . reverse
+                $ snd report
         row :: LEDGER.PostingsReportItem -> Html
         row (when, what, LEDGER.Posting {pamount = pamount}, amount)
                 = HT.tr
@@ -133,3 +143,25 @@ filterAmount p (LEDGER.Mixed amounts) = LEDGER.Mixed (filter p amounts)
 isCredit, isDebit :: LEDGER.Amount -> Bool
 isCredit LEDGER.Amount{..} = aquantity < 0
 isDebit  LEDGER.Amount{..} = 0 < aquantity
+
+
+html5Page :: Html -> Html -> Html
+html5Page title body
+        = HT.docTypeHtml
+          $ HT.head (HT.title title)
+            <> HT.body body
+
+titleNav :: [(Html, AttributeValue)] -> Html -> (Html, Html)
+titleNav above here = (title, nav) where
+        title = mconcat . intersperse " \x2190 "
+                $ here : map fst (reverse above)
+        nav = HT.nav
+              . mconcat
+              . intersperse " \x2192 "
+              . map link
+              $ (map . second) Just above ++ [(here, Nothing)]
+        link (anchor, href)
+                = HT.i
+                  $ maybe anchor
+                          (\href' -> HT.a ! AT.href href' $ anchor)
+                          href
