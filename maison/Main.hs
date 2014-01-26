@@ -14,4 +14,5 @@ main = WARP.runSettings WARP.defaultSettings
 
 sites :: Sites
 sites = singleSite (Authority "dionysus" . Just . Just $ 3000)
-        $ ledgerSite "/home/dave/notes/102-richmond-road.journal"
+        $ ledgerSite "102 Richmond Road Accounts"
+                     "/home/dave/notes/102-richmond-road.journal"

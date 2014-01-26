@@ -1,7 +1,6 @@
 module Ledger (ledgerSite) where
 
 -- base
-import           Control.Arrow
 import qualified Data.Foldable               as F
 import           Data.List
 import           Data.Monoid
@@ -28,8 +27,8 @@ import qualified Data.Text              as T
 import           Data.Time.Format
 
 
-ledgerSite :: FilePath -> Site
-ledgerSite nf = Site $ \path _query -> case path of
+ledgerSite :: String -> FilePath -> Site
+ledgerSite title' nf = Site $ \path _query -> case path of
         []            -> go Nothing
         [accountName] -> go (Just accountName)
         _             -> return (Left defaultMissingResource)
@@ -48,17 +47,23 @@ ledgerSite nf = Site $ \path _query -> case path of
                                          (LEDGER.ledgerAccount ledger acName)
                             where
                                 acName = T.unpack ac
-        goJournal journal = Right found {existingGet = Just $ balances journal}
+        goJournal journal = Right found {existingGet = Just balances'} where
+                balances' = balances breadcrumbs journal
         goAccount journal acName _ac
-                = Right found {existingGet = Just $ transactions journal acName}
+                = Right found {existingGet = Just transactions'}
+            where
+                transactions' = transactions breadcrumbs' journal acName
+                breadcrumbs' = (fromString acName, "./" <> fromString acName)
+                               : breadcrumbs
         found = defaultExistingResource :: ExistingResource
+        breadcrumbs = [(fromString title', "./")]
 
 
-balances :: LEDGER.Journal -> IO Entity
-balances journal
-        = return . entityFromHtml . html5Page title $ nav <> table
-    where
-        (title, nav) = titleNav [] "102 Richmond Road Accounts"
+balances :: Breadcrumbs -> LEDGER.Journal -> IO Entity
+balances breadcrumbs journal
+        = return . entityFromHtml . html5Page (title breadcrumbs)
+          $ nav breadcrumbs <> table
+     where
         report = LEDGER.balanceReport
                  LEDGER.defreportopts {LEDGER.flat_ = True,
                                        LEDGER.empty_ = True}
@@ -80,13 +85,11 @@ balances journal
                 (balance, tag) = formatAmountWithTag amount
 
 
-transactions :: LEDGER.Journal -> String -> IO Entity
-transactions journal acName
-        = return . entityFromHtml . html5Page title
-          $ nav <> table
+transactions :: Breadcrumbs -> LEDGER.Journal -> String -> IO Entity
+transactions breadcrumbs journal acName
+        = return . entityFromHtml . html5Page (title breadcrumbs)
+          $ nav breadcrumbs <> table
     where
-        (title, nav) = titleNav [("102 Richmond Road Accounts", "./")]
-                                (fromString acName)
         report = LEDGER.postingsReport
                  LEDGER.defreportopts {LEDGER.flat_ = True}
                  (LEDGER.Acct acName)
@@ -146,22 +149,23 @@ isDebit  LEDGER.Amount{..} = 0 < aquantity
 
 
 html5Page :: Html -> Html -> Html
-html5Page title body
+html5Page title' body
         = HT.docTypeHtml
-          $ HT.head (HT.title title)
+          $ HT.head (HT.title title')
             <> HT.body body
 
-titleNav :: [(Html, AttributeValue)] -> Html -> (Html, Html)
-titleNav above here = (title, nav) where
-        title = mconcat . intersperse " \x2190 "
-                $ here : map fst (reverse above)
-        nav = HT.nav
-              . mconcat
-              . intersperse " \x2192 "
-              . map link
-              $ (map . second) Just above ++ [(here, Nothing)]
-        link (anchor, href)
-                = HT.i
-                  $ maybe anchor
-                          (\href' -> HT.a ! AT.href href' $ anchor)
-                          href
+
+type Breadcrumbs = [(Html, AttributeValue)]
+
+title :: Breadcrumbs -> Html
+title = mconcat . intersperse " \x2190 " . map fst
+
+nav :: Breadcrumbs -> Html
+nav = HT.nav
+      . mconcat
+      . intersperse " \x2192 "
+      . map HT.i
+      . reverse
+      . zipWith ($) (fst : repeat link)
+    where
+        link (anchor, href) = HT.a ! AT.href href $ anchor
