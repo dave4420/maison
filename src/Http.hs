@@ -46,19 +46,19 @@ import qualified Network.Wai               as WAI
 
 data Authority = Authority {
         _host :: ByteString,
-        _port :: Maybe (Maybe Int)}
+        _port :: Int}
     deriving (Eq, Ord)
 $(L.makeLenses ''Authority)
 
-parseAuthority :: ByteString -> Maybe Authority
-parseAuthority bsAuth = do
+parseAuthority :: Int -> ByteString -> Maybe Authority
+parseAuthority defaultPort bsAuth = do
         let (_host, suffix) = BC.break (':' ==) bsAuth
         guard . not . B.null $ _host
         _port <- case B.uncons suffix of
-                Nothing      -> return Nothing
-                Just (_, "") -> return $ Just Nothing
+                Nothing      -> return defaultPort
+                Just (_, "") -> return defaultPort
                 Just (_, bs) -> guard (BC.all isDigit bs)
-                                >> (return . Just . Just . read . BC.unpack) bs
+                                >> (return . read . BC.unpack) bs
         return Authority{..}
 
 
@@ -174,18 +174,26 @@ defaultUgly (UglyStatus headers status) = do
                 _      -> Z.fromByteString $ HTTP.statusMessage status
 
 
-waiApplicationFromSites :: Sites -> WAI.Application
+waiApplicationFromSitesForHttp :: Sites -> WAI.Application
+waiApplicationFromSitesForHttp = waiApplicationFromSites 80
+
+waiApplicationFromSitesForHttps :: Sites -> WAI.Application
+waiApplicationFromSitesForHttps = waiApplicationFromSites 443
+
+waiApplicationFromSites :: Int -> Sites -> WAI.Application
 {- ^ Formalisation of
 <http://upload.wikimedia.org/wikipedia/commons/8/8a/Http-headers-status.svg>.
 -}
-waiApplicationFromSites sites = runHttpT defaultUgly (httpMain sites)
+waiApplicationFromSites defaultPort sites
+        = runHttpT defaultUgly (httpMain defaultPort sites)
 
 
-httpMain :: Monad m => Sites' m -> HttpT m WAI.Response
-httpMain sites = do
+httpMain :: Monad m => Int -> Sites' m -> HttpT m WAI.Response
+httpMain defaultPort sites = do
 
         authority
-         <- maybe (oops HTTP.badRequest400) (return . parseAuthority)
+         <- maybe (oops HTTP.badRequest400)
+                  (return . parseAuthority defaultPort)
             =<< asksRequest WAI.requestHeaderHost
 
         site

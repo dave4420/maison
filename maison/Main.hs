@@ -9,10 +9,10 @@ import qualified Network.Wai.Handler.Warp  as WARP
 
 main :: IO ()
 main = WARP.runSettings WARP.defaultSettings
-       . waiApplicationFromSites
+       . waiApplicationFromSitesForHttp
        $ sites
 
 sites :: Sites
-sites = singleSite (Authority "dionysus" . Just . Just $ 3000)
+sites = singleSite (Authority "dionysus" 3000)
         $ ledgerSite "102 Richmond Road Accounts"
                      "/home/dave/notes/102-richmond-road.journal"

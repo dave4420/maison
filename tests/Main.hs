@@ -42,7 +42,7 @@ tests = $testGroupGenerator
 
 testSites :: Sites -> Session () -> Property
 testSites sites session
-        = propertyIO $ runSession session $ waiApplicationFromSites sites
+        = propertyIO $ runSession session $ waiApplicationFromSitesForHttp sites
 
 hostnames :: Gen ByteString
 hostnames = B.intercalate "." <$> listOf1 segments
