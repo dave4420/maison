@@ -14,6 +14,9 @@ import qualified Text.Blaze.Html5.Attributes as AT
 -- hledger-lib
 import qualified Hledger                     as LEDGER
 
+-- lens
+import           Control.Lens.Operators
+
 -- maison
 import           Http
 
@@ -47,10 +50,15 @@ ledgerSite title' nf = Site $ \path _query -> case path of
                                          (LEDGER.ledgerAccount ledger acName)
                             where
                                 acName = T.unpack ac
-        goJournal journal = Right found {existingGet = Just balances'} where
+        goJournal journal = Right
+                            $ existingGet .~ Just balances'
+                              $ found
+            where
                 balances' = balances breadcrumbs journal
         goAccount journal acName _ac
-                = Right found {existingGet = Just transactions'}
+                = Right
+                  $ existingGet .~ Just transactions'
+                    $ found
             where
                 transactions' = transactions breadcrumbs' journal acName
                 breadcrumbs' = (fromString acName, "./" <> fromString acName)

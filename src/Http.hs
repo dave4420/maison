@@ -5,8 +5,9 @@ module Http (
         Site, Site'(..),
         Method(..),
         Resource, Resource',
-        ExistingResource, ExistingResource'(..), defaultExistingResource,
-        MissingResource, MissingResource', defaultMissingResource,
+        ExistingResource, ExistingResource'(), defaultExistingResource,
+        existingGet,
+        MissingResource, MissingResource'(), defaultMissingResource,
         ExtraHeader(..),
         Entity(),
         entityFromStrictText, entityFromStrictByteString, entityFromHtml,
@@ -111,23 +112,6 @@ parseMethod "GET"  = Just GET
 parseMethod _      = Nothing
 
 
-type Resource = Resource' IO
-type MissingResource = MissingResource' IO
-type ExistingResource = ExistingResource' IO
-type Resource' m = Either (MissingResource' m) (ExistingResource' m)
-
-data MissingResource' m = MissingResource (m ())
-
-data ExistingResource' m = ExistingResource {
-        existingGet :: Maybe (m Entity)}
-
-defaultMissingResource :: Monad m => MissingResource' m
-defaultMissingResource = MissingResource (return ())
-
-defaultExistingResource :: Monad m => ExistingResource' m
-defaultExistingResource = ExistingResource Nothing
-
-
 data ExtraHeader = ExtraHeader HTTP.Header
 
 unExtraHeader :: ExtraHeader -> HTTP.ResponseHeaders
@@ -158,6 +142,24 @@ entityFromHtml html = Entity{..} where
         entityExtraHeaders = []
         entityType = "text/html; charset=utf-8"
         entityBody = EntityBodyFromBuilder (ZH.renderHtmlBuilder html)
+
+
+type Resource = Resource' IO
+type MissingResource = MissingResource' IO
+type ExistingResource = ExistingResource' IO
+type Resource' m = Either (MissingResource' m) (ExistingResource' m)
+
+data MissingResource' m = MissingResource (m ())
+
+data ExistingResource' m = ExistingResource {
+        _existingGet :: Maybe (m Entity)}
+$(L.makeLenses ''ExistingResource')
+
+defaultMissingResource :: Monad m => MissingResource' m
+defaultMissingResource = MissingResource (return ())
+
+defaultExistingResource :: Monad m => ExistingResource' m
+defaultExistingResource = ExistingResource Nothing
 
 
 newtype HttpT m a = HttpT (EitherT UglyStatus (ReaderT WAI.Request m) a)
@@ -240,9 +242,9 @@ handleExistingResource method resource = do
         --TODO: caching preconditions
         entity
          <- maybe (oops HTTP.methodNotAllowed405) lift $ case method of
-                GET -> existingGet resource
+                GET -> resource ^. existingGet
                        --TODO: range requests
-                HEAD -> existingGet resource
+                HEAD -> resource ^. existingGet
                         --TODO: early return for HEAD
         --TODO: content negotiation
         return $ waiResponse (method == HEAD) HTTP.ok200 entity
