@@ -1,4 +1,18 @@
-module Http where
+module Http (
+        Authority (Authority), host, port,
+        Sites, Sites',
+        singleSite,
+        Site, Site'(..),
+        Method(..),
+        Resource, Resource',
+        ExistingResource, ExistingResource'(..), defaultExistingResource,
+        MissingResource, MissingResource', defaultMissingResource,
+        ExtraHeader(..),
+        Entity(),
+        entityFromStrictText, entityFromStrictByteString, entityFromHtml,
+        waiApplicationFromSitesForHttp, waiApplicationFromSitesForHttps,
+)
+where
 
 -- base
 import           Control.Applicative
