@@ -11,6 +11,7 @@ module Http (
         Entity(),
         entityFromStrictText, entityFromStrictByteString, entityFromHtml,
         waiApplicationFromSitesForHttp, waiApplicationFromSitesForHttps,
+        NonEmpty(..),
 )
 where
 
@@ -45,6 +46,9 @@ import qualified Network.HTTP.Types            as HTTP
 -- lens
 import qualified Control.Lens                  as L
 import           Control.Lens.Operators
+
+-- semigroups
+import           Data.List.NonEmpty (NonEmpty(..), nonEmpty)
 
 -- text
 import           Data.Text (Text)
@@ -90,11 +94,11 @@ singleSite :: Monad m => Authority -> Site' m -> Sites' m
 singleSite authority site = Sites $ M.singleton authority site
 
 
-newtype Site' m = Site ([Text] -> HTTP.Query -> m (Resource' m))
+newtype Site' m = Site (NonEmpty Text -> HTTP.Query -> m (Resource' m))
 type Site = Site' IO
 
 retrieveResource :: Monad m =>
-                    Site' m -> [Text] -> HTTP.Query -> m (Resource' m)
+                    Site' m -> NonEmpty Text -> HTTP.Query -> m (Resource' m)
 retrieveResource (Site site) = site
 
 
@@ -221,7 +225,7 @@ httpMain defaultPort sites = do
         (either <$> handleMissingResource <*> handleExistingResource) method
             =<< lift
             =<< asksRequest (retrieveResource site
-                             <$> WAI.pathInfo
+                             <$> fromMaybe (pure "") . nonEmpty . WAI.pathInfo
                              <*> WAI.queryString)
 
 

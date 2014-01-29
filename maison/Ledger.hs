@@ -29,9 +29,9 @@ import           Data.Time.Format
 
 ledgerSite :: String -> FilePath -> Site
 ledgerSite title' nf = Site $ \path _query -> case path of
-        []            -> go Nothing
-        [accountName] -> go (Just accountName)
-        _             -> return (Left defaultMissingResource)
+        "" :| []          -> go Nothing
+        accountName :| [] -> go (Just accountName)
+        _                 -> return (Left defaultMissingResource)
     where
         go sub = do
                 journal
