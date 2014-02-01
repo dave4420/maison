@@ -1,0 +1,17 @@
+#!/bin/bash
+set -e
+
+hs18 user-install
+
+sudo cp ~/.cabal/bin/maison /usr/local/sbin/maison.new
+sudo mv /usr/local/sbin/maison{.new,}
+
+sudo tee /etc/init/local-maison.conf >/dev/null <<INIT
+description "maison spodhouse webserver"
+author "Dave <beakerchu@googlemail.com>"
+start on (local-filesystems and net-device-up)
+stop on runlevel [!2345]
+respawn
+exec /usr/local/sbin/maison
+INIT
+sudo service local-maison restart
