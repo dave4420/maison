@@ -26,6 +26,7 @@ library
                      , containers
                      , errors == 1.4.*
                      , http-types
+                     , hslogger == 1.2.*
                      , lens == 3.10.*
                      , semigroups == 0.12.*
                      , text
@@ -49,6 +50,7 @@ executable maison
                      , base
                      , blaze-html
                      , hledger-lib
+                     , hslogger
                      , lens
                      , old-locale
                      , text == 1.0.*

@@ -18,6 +18,7 @@ where
 
 -- base
 import           Control.Applicative
+import qualified Control.Exception             as X
 import           Control.Monad
 import           Data.Char
 import           Data.Monoid
@@ -43,6 +44,9 @@ import           Control.Error
 
 -- http-types
 import qualified Network.HTTP.Types            as HTTP
+
+-- hslogger
+import           System.Log.Logger
 
 -- lens
 import qualified Control.Lens                  as L
@@ -204,8 +208,14 @@ waiApplicationFromSites :: Int -> Sites -> WAI.Application
 {- ^ Formalisation of
 <http://upload.wikimedia.org/wikipedia/commons/8/8a/Http-headers-status.svg>.
 -}
-waiApplicationFromSites defaultPort sites
-        = runHttpT defaultUgly (httpMain defaultPort sites)
+waiApplicationFromSites defaultPort sites request
+        = runHttpT defaultUgly (httpMain defaultPort sites) request
+           `X.catch` panic
+    where
+        panic :: X.IOException -> IO WAI.Response
+        panic e = do
+                warningM "" ("Exception: " ++ show e)
+                runHttpT defaultUgly (oops HTTP.internalServerError500) request
 
 
 httpMain :: Monad m => Int -> Sites' m -> HttpT m WAI.Response

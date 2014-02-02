@@ -12,6 +12,7 @@ author "Dave <beakerchu@googlemail.com>"
 start on (local-filesystems and net-device-up)
 stop on runlevel [!2345]
 respawn
-exec /usr/local/sbin/maison
+env LANG=en_GB.UTF-8
+exec /usr/local/sbin/maison foo
 INIT
 sudo service local-maison restart
