@@ -1,7 +1,7 @@
 module Http (
         Authority (Authority), authorityHost, authorityPort,
         Sites, Sites',
-        singleSite,
+        singleSite, singleSitePort,
         Site, Site'(..),
         Method(..),
         Resource, Resource',
@@ -15,6 +15,9 @@ module Http (
         NonEmpty(..),
 )
 where
+
+import           DefMap (DefMap)
+import qualified DefMap                        as DM
 
 -- base
 import           Control.Applicative
@@ -85,18 +88,24 @@ parseAuthority defaultPort bsAuth = do
         return Authority{..}
 
 
-newtype Sites' m = Sites (Map Authority (Site' m))
+newtype Sites' m = Sites (Map ByteString (DefMap Int (Site' m)))
 type Sites = Sites' IO
 
 instance Monoid (Sites' m) where
         mempty = Sites mempty
-        mappend (Sites x) (Sites y) = Sites (x <> y)
+        mappend (Sites x) (Sites y) = Sites (M.unionWith (<>) x y)
 
 lookupSite :: Authority -> (Sites' m) -> Maybe (Site' m)
-lookupSite authority (Sites sites) = sites ^. L.at authority
+lookupSite authority (Sites sites)
+        = L.view (DM.defAt $ authority ^. authorityPort)
+          <=< L.view (L.at $ authority ^. authorityHost)
+          $ sites
 
-singleSite :: Monad m => Authority -> Site' m -> Sites' m
-singleSite authority site = Sites $ M.singleton authority site
+singleSite :: Monad m => ByteString -> Site' m -> Sites' m
+singleSite host = Sites . M.singleton host . DM.defVal
+
+singleSitePort :: Monad m => ByteString -> Int -> Site' m -> Sites' m
+singleSitePort host port = Sites . M.singleton host . DM.singleton port
 
 
 newtype Site' m = Site (NonEmpty Text -> HTTP.Query -> m (Resource' m))

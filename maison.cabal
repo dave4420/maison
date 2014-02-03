@@ -17,7 +17,7 @@ cabal-version:       >=1.10
 
 library
   exposed-modules:     Http
-  -- other-modules:       
+  other-modules:       DefMap
   -- other-extensions:    
   build-depends:       base
                      , blaze-builder
@@ -40,6 +40,7 @@ library
                      , DeriveFunctor
                      , GeneralizedNewtypeDeriving
                      , LambdaCase
+                     , RankNTypes
   GHC-Options:         -Wall -Werror
 
 executable maison

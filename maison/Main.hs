@@ -31,7 +31,7 @@ main = do
                 WARP.settingsBeforeMainLoop = maybe (return ()) dropPrivs
                                               $ listToMaybe args}
             . waiApplicationFromSitesForHttp
-            $ sites port
+            $ sites
 
 initLoggingForDaemon :: IO ()
 initLoggingForDaemon = do
@@ -53,7 +53,7 @@ dropPrivs nUser = do
                 exitFailure
 
 
-sites :: Int -> Sites
-sites port = singleSite (Authority "dionysus" port)
-             $ ledgerSite "102 Richmond Road Accounts"
-                          "/home/dave/notes/102-richmond-road.journal"
+sites :: Sites
+sites = singleSite "dionysus"
+        $ ledgerSite "102 Richmond Road Accounts"
+                     "/home/dave/notes/102-richmond-road.journal"
