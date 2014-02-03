@@ -1,5 +1,5 @@
 module Http (
-        Authority (Authority), host, port,
+        Authority (Authority), authorityHost, authorityPort,
         Sites, Sites',
         singleSite,
         Site, Site'(..),
@@ -68,16 +68,16 @@ import qualified Network.Wai               as WAI
 
 
 data Authority = Authority {
-        _host :: ByteString,
-        _port :: Int}
+        _authorityHost :: ByteString,
+        _authorityPort :: Int}
     deriving (Eq, Ord)
 $(L.makeLenses ''Authority)
 
 parseAuthority :: Int -> ByteString -> Maybe Authority
 parseAuthority defaultPort bsAuth = do
-        let (_host, suffix) = BC.break (':' ==) bsAuth
-        guard . not . B.null $ _host
-        _port <- case B.uncons suffix of
+        let (_authorityHost, suffix) = BC.break (':' ==) bsAuth
+        guard . not . B.null $ _authorityHost
+        _authorityPort <- case B.uncons suffix of
                 Nothing      -> return defaultPort
                 Just (_, "") -> return defaultPort
                 Just (_, bs) -> guard (BC.all isDigit bs)
