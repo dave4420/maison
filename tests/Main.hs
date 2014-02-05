@@ -79,6 +79,20 @@ segments = BC.pack <$> listOf1 (elements alphabet) where
         alphabet = ['a'..'z'] ++ ['A'..'Z'] ++ ['0'..'9']
 
 
+assertOK, assertHostNotFound :: WAI.SResponse -> Session ()
+assertOK = WAI.assertStatus 200
+assertHostNotFound = WAI.assertStatus 400
+
+assertBody :: ByteString -> WAI.SResponse -> Session ()
+assertBody body = WAI.assertBody (BL.fromStrict body)
+
+
+runRequest :: (WAI.Request -> WAI.Request) -> Session WAI.SResponse
+runRequest f = WAI.request (f WAI.defaultRequest)
+
+setGET :: WAI.Request -> WAI.Request
+setGET request = request {WAI.requestMethod = "GET"}
+
 setHost :: ByteString -> WAI.Request -> WAI.Request
 setHost host request = request {WAI.requestHeaderHost = Just host,
                                 WAI.requestHeaders = headers}
@@ -106,11 +120,11 @@ prop_emptySiteGET
           forAll queries $ \query ->
           testSites mempty $ do
                 response
-                 <- WAI.request
-                    . (`WAI.setPath` (path <> query))
-                    . setHost hostname
-                    $ WAI.defaultRequest {WAI.requestMethod = "GET"}
-                WAI.assertStatus 400 response
+                 <- runRequest
+                    $ (`WAI.setPath` (path <> query))
+                      . setHost hostname
+                      . setGET
+                assertHostNotFound response
 
 
 prop_singleSiteHitGET :: Property
@@ -120,14 +134,12 @@ prop_singleSiteHitGET
           forAll queries $ \query ->
           testSites (singleSite hostname $ reflectUrl hostname) $ do
                 response
-                 <- WAI.request
-                    . (`WAI.setPath` (path <> query))
-                    . setHost hostname
-                    $ WAI.defaultRequest {WAI.requestMethod = "GET"}
-                WAI.assertStatus 200 response
-                WAI.assertBody (BL.fromStrict
-                                $ mconcat ["//", hostname, path, query])
-                               response
+                 <- runRequest
+                    $ (`WAI.setPath` (path <> query))
+                      . setHost hostname
+                      . setGET
+                assertOK response
+                assertBody (mconcat ["//", hostname, path, query]) response
 
 
 prop_singleSiteMissGET :: Property
@@ -138,8 +150,8 @@ prop_singleSiteMissGET
           forAll queries $ \query ->
           testSites (singleSite hostname' $ reflectUrl hostname) $ do
                 response
-                 <- WAI.request
-                    . (`WAI.setPath` (path <> query))
-                    . setHost hostname
-                    $ WAI.defaultRequest {WAI.requestMethod = "GET"}
-                WAI.assertStatus 400 response
+                 <- runRequest
+                    $ (`WAI.setPath` (path <> query))
+                      . setHost hostname
+                      . setGET
+                assertHostNotFound response
