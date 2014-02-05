@@ -70,12 +70,15 @@ test-suite tests
   build-depends:       maison
                      , base
                      , bytestring
+                     , http-types
                      , HUnit
+                     , lens
                      , QuickCheck == 2.*
                      , quickcheck-io
                      , test-framework
                      , test-framework-quickcheck2
                      , test-framework-th
+                     , text
                      , wai == 2.0.*
                      , wai-test == 2.0.*
   hs-source-dirs:      tests
