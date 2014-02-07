@@ -2,6 +2,7 @@ module Http (
         Authority (Authority), authorityHost, authorityPort,
         Sites, Sites',
         singleSite, singleSitePort,
+        underSite, underSitePort,
         Site, Site'(..),
         Method(..),
         Resource, Resource',
@@ -24,6 +25,7 @@ import           Control.Applicative
 import qualified Control.Exception             as X
 import           Control.Monad
 import           Data.Char
+import           Data.Maybe
 import           Data.Monoid
 
 -- blaze-builder
@@ -57,6 +59,7 @@ import           Control.Lens.Operators
 
 -- semigroups
 import           Data.List.NonEmpty (NonEmpty(..), nonEmpty)
+import qualified Data.List.NonEmpty            as SG
 
 -- text
 import           Data.Text (Text)
@@ -67,7 +70,7 @@ import           Control.Monad.Trans.Class
 import           Control.Monad.Trans.Reader
 
 -- wai
-import qualified Network.Wai               as WAI
+import qualified Network.Wai                   as WAI
 
 
 data Authority = Authority {
@@ -88,7 +91,9 @@ parseAuthority defaultPort bsAuth = do
         return Authority{..}
 
 
-newtype Sites' m = Sites (Map ByteString (DefMap Int (Site' m)))
+newtype Sites' m = Sites (Map ByteString (DefMap Int (Site' m), -- here
+                                          DefMap Int (Site' m), -- def for below
+                                          Sites' m))            -- below
 type Sites = Sites' IO
 
 instance Monoid (Sites' m) where
@@ -96,16 +101,44 @@ instance Monoid (Sites' m) where
         mappend (Sites x) (Sites y) = Sites (M.unionWith (<>) x y)
 
 lookupSite :: Authority -> (Sites' m) -> Maybe (Site' m)
-lookupSite authority (Sites sites)
-        = L.view (DM.defAt $ authority ^. authorityPort)
-          <=< L.view (L.at $ authority ^. authorityHost)
-          $ sites
+lookupSite authority
+        = view (L.view (DM.defAt $ authority ^. authorityPort))
+               (SG.reverse . atomiseHost $ authority ^. authorityHost)
+    where
+        view k (node :| nodes) (Sites sites) = do
+                (here, def, below) <- sites ^. L.at node
+                maybe (k here)
+                      (\nodes' -> view k nodes' below <|> k def)
+                      (nonEmpty nodes)
 
 singleSite :: Monad m => ByteString -> Site' m -> Sites' m
-singleSite host = Sites . M.singleton host . DM.defVal
+singleSite host = singleSite' host . DM.defVal
 
 singleSitePort :: Monad m => ByteString -> Int -> Site' m -> Sites' m
-singleSitePort host port = Sites . M.singleton host . DM.singleton port
+singleSitePort host port = singleSite' host . DM.singleton port
+
+singleSite' :: Monad m => ByteString -> DefMap Int (Site' m) -> Sites' m
+singleSite' = \host -> let node :| nodes = atomiseHost host
+                       in flip (foldl branch) nodes . leaf node
+    where
+        leaf node x = Sites $ M.singleton node (x, mempty, mempty)
+        branch x node = Sites $ M.singleton node (mempty, mempty, x)
+
+underSite :: Monad m => ByteString -> Site' m -> Sites' m
+underSite host = underSite' host . DM.defVal
+
+underSitePort :: Monad m => ByteString -> Int -> Site' m -> Sites' m
+underSitePort host port = underSite' host . DM.singleton port
+
+underSite' :: Monad m => ByteString -> DefMap Int (Site' m) -> Sites' m
+underSite' = \host -> let node :| nodes = atomiseHost host
+                      in flip (foldl branch) nodes . leaf node
+    where
+        leaf node x = Sites $ M.singleton node (mempty, x, mempty)
+        branch x node = Sites $ M.singleton node (mempty, mempty, x)
+
+atomiseHost :: ByteString -> NonEmpty ByteString
+atomiseHost = fromJust . nonEmpty . BC.split '.'
 
 
 newtype Site' m = Site (NonEmpty Text -> HTTP.Query -> m (Resource' m))

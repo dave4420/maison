@@ -126,7 +126,6 @@ prop_emptySiteGET
                       . setGET
                 assertHostNotFound response
 
-
 prop_singleSiteHitGET :: Property
 prop_singleSiteHitGET
         = forAll hostnames $ \hostname ->
@@ -141,7 +140,6 @@ prop_singleSiteHitGET
                 assertOK response
                 assertBody (mconcat ["//", hostname, path, query]) response
 
-
 prop_singleSiteMissGET :: Property
 prop_singleSiteMissGET
         = forAll hostnames $ \hostname ->
@@ -149,6 +147,49 @@ prop_singleSiteMissGET
           forAll paths $ \path ->
           forAll queries $ \query ->
           testSites (singleSite hostname' $ reflectUrl hostname) $ do
+                response
+                 <- runRequest
+                    $ (`WAI.setPath` (path <> query))
+                      . setHost hostname
+                      . setGET
+                assertHostNotFound response
+
+prop_underSiteHitGET :: Property
+prop_underSiteHitGET
+        = forAll hostnames $ \hostnameSuffix ->
+          forAll hostnames $ \hostnamePrefix ->
+          forAll paths $ \path ->
+          forAll queries $ \query ->
+          testSites (underSite hostnameSuffix $ reflectUrl hostnameSuffix) $ do
+                response
+                 <- runRequest
+                    $ (`WAI.setPath` (path <> query))
+                      . setHost (hostnamePrefix <> "." <> hostnameSuffix)
+                      . setGET
+                assertOK response
+                assertBody (mconcat ["//", hostnameSuffix, path, query])
+                           response
+
+prop_underSiteMissGET :: Property
+prop_underSiteMissGET
+        = forAll hostnames $ \hostnameHit ->
+          forAll hostnames $ \hostnameMiss ->
+          forAll paths $ \path ->
+          forAll queries $ \query ->
+          testSites (underSite hostnameHit $ reflectUrl hostnameHit) $ do
+                response
+                 <- runRequest
+                    $ (`WAI.setPath` (path <> query))
+                      . setHost hostnameMiss
+                      . setGET
+                assertHostNotFound response
+
+prop_underSiteDirectMissGET :: Property
+prop_underSiteDirectMissGET
+        = forAll hostnames $ \hostname ->
+          forAll paths $ \path ->
+          forAll queries $ \query ->
+          testSites (underSite hostname $ reflectUrl hostname) $ do
                 response
                  <- runRequest
                     $ (`WAI.setPath` (path <> query))
