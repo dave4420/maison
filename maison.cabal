@@ -52,6 +52,7 @@ executable maison
   build-depends:       maison
                      , base
                      , blaze-html
+                     , containers
                      , hledger-lib
                      , hslogger
                      , lens

@@ -11,10 +11,14 @@ import           Text.Blaze.Html
 import qualified Text.Blaze.Html5            as HT
 import qualified Text.Blaze.Html5.Attributes as AT
 
+-- containers
+import qualified Data.Set                    as S
+
 -- hledger-lib
 import qualified Hledger                     as LEDGER
 
 -- lens
+import qualified Control.Lens                as L
 import           Control.Lens.Operators
 
 -- maison
@@ -72,12 +76,24 @@ balances breadcrumbs journal
         = return . entityFromHtml . html5Page (title breadcrumbs)
           $ nav breadcrumbs <> table
      where
+
         report = LEDGER.balanceReport
                  LEDGER.defreportopts {LEDGER.flat_ = True,
                                        LEDGER.empty_ = True}
                  LEDGER.Any
                  journal
-        table = HT.table . mconcat . map row $ fst report
+
+        table = HT.table . mconcat . map row . leafAccountsOnly $ fst report
+
+        leafAccountsOnly accts
+                = filter (\acct -> S.notMember (acct ^. L._1) unwanted) accts
+            where
+                unwanted = S.fromList . concatMap (^. L._1 . L.to parents)
+                           $ accts
+                parents s = case dropWhileEnd (':' /=) s of
+                        "" -> []
+                        s' -> let s'' = init s' in s'' : parents s''
+
         row :: LEDGER.BalanceReportItem -> Html
         row (fullName, _shortName, _indent, amount)
                 = HT.tr
