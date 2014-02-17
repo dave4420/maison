@@ -1,6 +1,7 @@
 module Ledger (ledgerSite) where
 
 -- base
+import           Control.Applicative
 import qualified Data.Foldable               as F
 import           Data.List
 import           Data.Monoid
@@ -31,7 +32,7 @@ import           System.Locale
 import qualified Data.Text              as T
 
 -- time
-import           Data.Time.Format
+import           Data.Time
 
 
 ledgerSite :: String -> FilePath -> Site
@@ -72,18 +73,22 @@ ledgerSite title' nf = Site $ \path _query -> case path of
 
 
 balances :: Breadcrumbs -> LEDGER.Journal -> IO Entity
-balances breadcrumbs journal
-        = return . entityFromHtml . html5Page (title breadcrumbs)
-          $ nav breadcrumbs <> table
+balances breadcrumbs journal = do
+        today <- localDay . zonedTimeToLocalTime <$> getZonedTime
+        return . entityFromHtml . html5Page (title breadcrumbs)
+          $ nav breadcrumbs <> table today
      where
 
-        report = LEDGER.balanceReport
-                 LEDGER.defreportopts {LEDGER.flat_ = True,
-                                       LEDGER.empty_ = True}
-                 LEDGER.Any
-                 journal
+        report today
+                = LEDGER.balanceReport
+                  LEDGER.defreportopts {LEDGER.flat_ = True,
+                                        LEDGER.empty_ = True}
+                  (LEDGER.Date $ LEDGER.DateSpan Nothing (Just tomorrow))
+                  journal
+            where
+                tomorrow = addDays 1 today
 
-        table = HT.table . mconcat . map row . leafAccountsOnly $ fst report
+        table = HT.table . mconcat . map row . leafAccountsOnly . fst . report
 
         leafAccountsOnly accts
                 = filter (\acct -> S.notMember (acct ^. L._1) unwanted) accts
@@ -110,14 +115,22 @@ balances breadcrumbs journal
 
 
 transactions :: Breadcrumbs -> LEDGER.Journal -> String -> IO Entity
-transactions breadcrumbs journal acName
-        = return . entityFromHtml . html5Page (title breadcrumbs)
-          $ nav breadcrumbs <> table
+transactions breadcrumbs journal acName = do
+        today <- localDay . zonedTimeToLocalTime <$> getZonedTime
+        return . entityFromHtml . html5Page (title breadcrumbs)
+          $ nav breadcrumbs <> table today
     where
-        report = LEDGER.postingsReport
-                 LEDGER.defreportopts {LEDGER.flat_ = True}
-                 (LEDGER.Acct acName)
-                 journal
+
+        report today
+                = LEDGER.postingsReport
+                  LEDGER.defreportopts {LEDGER.flat_ = True}
+                  (LEDGER.And
+                   [LEDGER.Acct acName,
+                    LEDGER.Date $ LEDGER.DateSpan Nothing (Just tomorrow)])
+                  journal
+            where
+                tomorrow = addDays 1 today
+
         table = HT.table
                 . mconcat
                 . (HT.tr (F.foldMap (HT.td ! AT.style "text-align:right" $)
@@ -125,7 +138,9 @@ transactions breadcrumbs journal acName
                    :)
                 . map row
                 . reverse
-                $ snd report
+                . snd
+                . report
+
         row :: LEDGER.PostingsReportItem -> Html
         row (when, what, LEDGER.Posting {pamount = pamount}, amount)
                 = HT.tr
