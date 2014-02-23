@@ -9,6 +9,10 @@ module Http (
         ExistingResource, ExistingResource'(), defaultExistingResource,
         existingGet,
         MissingResource, MissingResource'(), defaultMissingResource,
+        missingBecause,
+        MissingBecause'(..),
+        Transience(..),
+        NotFound(..),
         ExtraHeader(..),
         Entity(),
         entityFromStrictText, entityFromStrictByteString, entityFromHtml,
@@ -195,14 +199,24 @@ type MissingResource = MissingResource' IO
 type ExistingResource = ExistingResource' IO
 type Resource' m = Either (MissingResource' m) (ExistingResource' m)
 
-data MissingResource' m = MissingResource (m ())
+data MissingResource' m = MissingResource {
+        _missingBecause :: MissingBecause' m}
+
+data MissingBecause' m
+        = Moved Transience ByteString   --TODO: better type for url
+        | NotFound NotFound (Maybe (m Entity))
+
+data Transience = Permanently | Temporarily
+data NotFound = Gone | NeverExisted
 
 data ExistingResource' m = ExistingResource {
         _existingGet :: Maybe (m Entity)}
+
+$(L.makeLenses ''MissingResource')
 $(L.makeLenses ''ExistingResource')
 
 defaultMissingResource :: Monad m => MissingResource' m
-defaultMissingResource = MissingResource (return ())
+defaultMissingResource = MissingResource $ NotFound NeverExisted Nothing
 
 defaultExistingResource :: Monad m => ExistingResource' m
 defaultExistingResource = ExistingResource Nothing
@@ -285,7 +299,23 @@ httpMain defaultPort sites = do
 
 handleMissingResource
         :: Monad m => Method -> MissingResource' m -> HttpT m WAI.Response
-handleMissingResource _method _resource = oops HTTP.notFound404
+handleMissingResource method resource = do
+        --TODO: potentially handle PUT
+        case resource ^. missingBecause of
+                Moved transience location
+                  -> oops' [(HTTP.hLocation, location)]
+                     $ case transience of
+                        Permanently -> HTTP.movedPermanently301
+                        Temporarily -> HTTP.temporaryRedirect307
+                NotFound why mkEntity
+                        --TODO: potentially handle POST
+                  -> maybe (oops status)
+                           (liftM (waiResponse (method == HEAD) status) . lift)
+                           mkEntity
+                  where
+                        status = case why of
+                                Gone         -> HTTP.gone410
+                                NeverExisted -> HTTP.notFound404
 
 
 handleExistingResource
