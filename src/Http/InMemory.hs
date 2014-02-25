@@ -15,4 +15,4 @@ import           Data.Text (Text)
 
 sealInMemorySite :: Monad m => DefMap (NonEmpty Text) (Resource' m) -> Site' m
 sealInMemorySite table = Site $ \path _query -> return
-        $ fromMaybe (Left defaultMissingResource) (table ^. defAt path)
+        $ fromMaybe (missingResource id) (table ^. defAt path)

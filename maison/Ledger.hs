@@ -39,7 +39,7 @@ ledgerSite :: String -> FilePath -> Site
 ledgerSite title' nf = Site $ \path _query -> case path of
         "" :| []          -> go Nothing
         accountName :| [] -> go (Just accountName)
-        _                 -> return (Left defaultMissingResource)
+        _                 -> return $ missingResource id
     where
         go sub = do
                 journal
@@ -50,25 +50,20 @@ ledgerSite title' nf = Site $ \path _query -> case path of
                              journal
                 return $ case sub of
                         Nothing -> goJournal journal
-                        Just ac -> maybe (Left defaultMissingResource)
+                        Just ac -> maybe (missingResource id)
                                          (goAccount journal acName)
                                          (LEDGER.ledgerAccount ledger acName)
                             where
                                 acName = T.unpack ac
-        goJournal journal = Right
-                            $ existingGet .~ Just balances'
-                              $ found
+        goJournal journal = existingResource $ existingGet .~ Just balances'
             where
                 balances' = balances breadcrumbs journal
         goAccount journal acName _ac
-                = Right
-                  $ existingGet .~ Just transactions'
-                    $ found
+                = existingResource $ existingGet .~ Just transactions'
             where
                 transactions' = transactions breadcrumbs' journal acName
                 breadcrumbs' = (fromString acName, "./" <> fromString acName)
                                : breadcrumbs
-        found = defaultExistingResource :: ExistingResource
         breadcrumbs = [(fromString title', "./")]
 
 

@@ -6,9 +6,9 @@ module Http (
         Site, Site'(..),
         Method(..),
         Resource, Resource',
-        ExistingResource, ExistingResource'(), defaultExistingResource,
+        ExistingResource, ExistingResource'(), existingResource,
         existingGet,
-        MissingResource, MissingResource'(), defaultMissingResource,
+        MissingResource, MissingResource'(), missingResource,
         missingBecause,
         MissingBecause'(..),
         Transience(..),
@@ -215,11 +215,13 @@ data ExistingResource' m = ExistingResource {
 $(L.makeLenses ''MissingResource')
 $(L.makeLenses ''ExistingResource')
 
-defaultMissingResource :: Monad m => MissingResource' m
-defaultMissingResource = MissingResource $ NotFound NeverExisted Nothing
+missingResource :: Monad m =>
+                   (MissingResource' m -> MissingResource' m) -> Resource' m
+missingResource f = Left . f . MissingResource $ NotFound NeverExisted Nothing
 
-defaultExistingResource :: Monad m => ExistingResource' m
-defaultExistingResource = ExistingResource Nothing
+existingResource :: Monad m =>
+                    (ExistingResource' m -> ExistingResource' m) -> Resource' m
+existingResource f = Right . f . ExistingResource $ Nothing
 
 
 newtype HttpT m a = HttpT (EitherT UglyStatus (ReaderT WAI.Request m) a)

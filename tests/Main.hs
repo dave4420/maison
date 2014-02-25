@@ -109,8 +109,7 @@ reflectUrl host = Site $ \path query -> let
                 "/",
                 T.encodeUtf8 . T.intercalate "/" . F.toList $ path,
                 HTTP.renderQuery True query]
-    in (return . Right . (existingGet .~ Just (return entity)))
-       (defaultExistingResource :: ExistingResource)
+    in return . existingResource $ existingGet .~ Just (return entity)
 
 
 prop_emptySiteGET :: Property
