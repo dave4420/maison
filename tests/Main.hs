@@ -143,6 +143,7 @@ prop_singleSiteMissGET :: Property
 prop_singleSiteMissGET
         = forAll hostnames $ \hostname ->
           forAll hostnames $ \hostname' ->
+          hostname /= hostname' ==>
           forAll paths $ \path ->
           forAll queries $ \query ->
           testSites (singleSite hostname' $ reflectUrl hostname) $ do
@@ -173,6 +174,7 @@ prop_underSiteMissGET :: Property
 prop_underSiteMissGET
         = forAll hostnames $ \hostnameHit ->
           forAll hostnames $ \hostnameMiss ->
+          not (("." <> hostnameHit) `B.isSuffixOf` hostnameMiss) ==>
           forAll paths $ \path ->
           forAll queries $ \query ->
           testSites (underSite hostnameHit $ reflectUrl hostnameHit) $ do
