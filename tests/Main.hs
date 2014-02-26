@@ -55,7 +55,7 @@ tests = $testGroupGenerator
 testSites :: Sites -> Session () -> Property
 testSites sites session
         = propertyIO . WAI.runSession session
-          $ waiApplicationFromSitesForHttp sites
+          $ waiApplicationFromSitesForHttp (settingsSites .~ sites)
 
 hostnames :: Gen ByteString
 hostnames = B.intercalate "." <$> listOf1 segments

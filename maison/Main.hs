@@ -7,6 +7,9 @@ import           Data.Maybe
 import           System.Environment
 import           System.Exit
 
+-- lens
+import           Control.Lens.Operators
+
 -- maison
 import           Http
 
@@ -31,7 +34,9 @@ main = do
                 WARP.settingsBeforeMainLoop = maybe (return ()) dropPrivs
                                               $ listToMaybe args}
             . waiApplicationFromSitesForHttp
-            $ sites
+            $ (settingsSites .~ sites)
+              . (settingsOnException
+                 .~ (\e -> warningM "" ("Exception: " ++ show e)))
 
 initLoggingForDaemon :: IO ()
 initLoggingForDaemon = do

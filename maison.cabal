@@ -28,7 +28,6 @@ library
                      , containers
                      , errors == 1.4.*
                      , http-types
-                     , hslogger == 1.2.*
                      , lens == 3.10.*
                      , semigroups == 0.12.*
                      , text
@@ -54,7 +53,7 @@ executable maison
                      , blaze-html
                      , containers
                      , hledger-lib
-                     , hslogger
+                     , hslogger == 1.2.*
                      , lens
                      , old-locale
                      , text == 1.0.*
@@ -74,7 +73,7 @@ executable maison
                      , base
                      , blaze-html
                      , bytestring
-                     , hslogger
+                     , hslogger == 1.2.*
                      , lens
                      , old-locale
                      , template-haskell

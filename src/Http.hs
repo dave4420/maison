@@ -16,6 +16,7 @@ module Http (
         ExtraHeader(..),
         Entity(),
         entityFromStrictText, entityFromStrictByteString, entityFromHtml,
+        Settings(), settingsSites, settingsOnException,
         waiApplicationFromSitesForHttp, waiApplicationFromSitesForHttps,
         NonEmpty(..),
 )
@@ -53,9 +54,6 @@ import           Control.Error
 
 -- http-types
 import qualified Network.HTTP.Types            as HTTP
-
--- hslogger
-import           System.Log.Logger
 
 -- lens
 import qualified Control.Lens                  as L
@@ -256,23 +254,35 @@ defaultUgly (UglyStatus headers status) = do
                 _      -> Z.fromByteString $ HTTP.statusMessage status
 
 
-waiApplicationFromSitesForHttp :: Sites -> WAI.Application
-waiApplicationFromSitesForHttp = waiApplicationFromSites 80
+data Settings = Settings {
+        _settingsDefaultPort :: Int,
+        _settingsSites :: Sites,
+        _settingsOnException :: X.IOException -> IO ()}
+$(L.makeLenses ''Settings)
 
-waiApplicationFromSitesForHttps :: Sites -> WAI.Application
-waiApplicationFromSitesForHttps = waiApplicationFromSites 443
+waiApplicationFromSitesForHttp :: (Settings -> Settings) -> WAI.Application
+waiApplicationFromSitesForHttp f
+        = waiApplicationFromSites ((settingsDefaultPort .~ 80) . f)
 
-waiApplicationFromSites :: Int -> Sites -> WAI.Application
+waiApplicationFromSitesForHttps :: (Settings -> Settings) -> WAI.Application
+waiApplicationFromSitesForHttps f
+        = waiApplicationFromSites ((settingsDefaultPort .~ 443) . f)
+
+waiApplicationFromSites :: (Settings -> Settings) -> WAI.Application
 {- ^ Formalisation of
 <http://upload.wikimedia.org/wikipedia/commons/8/8a/Http-headers-status.svg>.
 -}
-waiApplicationFromSites defaultPort sites request
-        = runHttpT defaultUgly (httpMain defaultPort sites) request
+waiApplicationFromSites f request
+        = runHttpT defaultUgly
+                   (httpMain (settings ^. settingsDefaultPort)
+                             (settings ^. settingsSites))
+                   request
            `X.catch` panic
     where
+        settings = f $ Settings 0 mempty (const $ return ())
         panic :: X.IOException -> IO WAI.Response
         panic e = do
-                warningM "" ("Exception: " ++ show e)
+                (settings ^. settingsOnException) e
                 runHttpT defaultUgly (oops HTTP.internalServerError500) request
 
 
