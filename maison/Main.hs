@@ -1,9 +1,11 @@
+import           FileTree
 import           Ledger
 
 -- base
 import qualified Control.Exception         as X
 import           Control.Monad
 import           Data.Maybe
+import           Data.Monoid
 import           System.Environment
 import           System.Exit
 
@@ -59,6 +61,9 @@ dropPrivs nUser = do
 
 
 sites :: Sites
-sites = singleSite "dionysus"
+sites = mconcat [
+        singleSite "dionysus"
         $ ledgerSite "102 Richmond Road Accounts"
-                     "/home/dave/notes/102-richmond-road.journal"
+                     "/home/dave/notes/102-richmond-road.journal",
+        singleSite "dave.dionysus"
+        $ fileTreeSite "~dave" "/home/dave"]

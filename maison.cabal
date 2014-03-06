@@ -52,10 +52,13 @@ executable maison
                      , base
                      , blaze-html
                      , containers
+                     , directory
+                     , filepath
                      , hledger-lib
                      , hslogger == 1.2.*
                      , lens
                      , old-locale
+                     , semigroups
                      , text == 1.0.*
                      , time
                      , unix
@@ -64,6 +67,7 @@ executable maison
   default-language:    Haskell2010
   default-extensions:  RecordWildCards
                      , OverloadedStrings
+                     , LambdaCase
   GHC-Options:         -Wall -Werror -rtsopts -with-rtsopts=-T -threaded
 
   main-is:             Main.hs

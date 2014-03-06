@@ -1,5 +1,7 @@
 module Ledger (ledgerSite) where
 
+import           Page
+
 -- base
 import           Control.Applicative
 import qualified Data.Foldable               as F
@@ -70,8 +72,7 @@ ledgerSite title' nf = Site $ \path _query -> case path of
 balances :: Breadcrumbs -> LEDGER.Journal -> IO Entity
 balances breadcrumbs journal = do
         today <- localDay . zonedTimeToLocalTime <$> getZonedTime
-        return . entityFromHtml . html5Page (title breadcrumbs)
-          $ nav breadcrumbs <> table today
+        return . entityFromPage breadcrumbs $ table today
      where
 
         report today
@@ -112,8 +113,7 @@ balances breadcrumbs journal = do
 transactions :: Breadcrumbs -> LEDGER.Journal -> String -> IO Entity
 transactions breadcrumbs journal acName = do
         today <- localDay . zonedTimeToLocalTime <$> getZonedTime
-        return . entityFromHtml . html5Page (title breadcrumbs)
-          $ nav breadcrumbs <> table today
+        return . entityFromPage breadcrumbs $ table today
     where
 
         report today
@@ -180,26 +180,3 @@ filterAmount p (LEDGER.Mixed amounts) = LEDGER.Mixed (filter p amounts)
 isCredit, isDebit :: LEDGER.Amount -> Bool
 isCredit LEDGER.Amount{..} = aquantity < 0
 isDebit  LEDGER.Amount{..} = 0 < aquantity
-
-
-html5Page :: Html -> Html -> Html
-html5Page title' body
-        = HT.docTypeHtml
-          $ HT.head (HT.title title')
-            <> HT.body body
-
-
-type Breadcrumbs = [(Html, AttributeValue)]
-
-title :: Breadcrumbs -> Html
-title = mconcat . intersperse " \x2190 " . map fst
-
-nav :: Breadcrumbs -> Html
-nav = HT.nav
-      . mconcat
-      . intersperse " \x2192 "
-      . map HT.i
-      . reverse
-      . zipWith ($) (fst : repeat link)
-    where
-        link (anchor, href) = HT.a ! AT.href href $ anchor

@@ -19,6 +19,11 @@ module Http (
         Settings(), settingsSites, settingsOnException,
         waiApplicationFromSitesForHttp, waiApplicationFromSitesForHttps,
         NonEmpty(..),
+        Query,
+        Path,
+        Uri(..),
+        RelUri(..),
+        Protocol(..),
 )
 where
 
@@ -53,6 +58,7 @@ import qualified Data.Map                      as M
 import           Control.Error
 
 -- http-types
+import           Network.HTTP.Types (Query)
 import qualified Network.HTTP.Types            as HTTP
 
 -- lens
@@ -91,6 +97,49 @@ parseAuthority defaultPort bsAuth = do
                 Just (_, bs) -> guard (BC.all isDigit bs)
                                 >> (return . read . BC.unpack) bs
         return Authority{..}
+
+bsFromAuthority :: Protocol -> Authority -> ByteString
+bsFromAuthority protocol authority
+        = authority ^. authorityHost
+          <> (if protocolPort protocol == authority ^. authorityPort
+                 then ""
+                 else BC.pack $ ':' : show (authority ^. authorityPort))
+
+
+data Uri = Uri Protocol Authority Path Query
+
+data RelUri
+        = AbsUri Uri
+        | RelProtocolUri Authority Path Query
+        | RelHostUri Path Query
+        | RelPathUri Int Path Query
+        | SameUri
+
+type Path = NonEmpty Text
+
+data Protocol = Http | Https
+
+(.+.) :: Uri -> RelUri -> Uri
+_  .+. AbsUri uri = uri
+Uri protocol _ _ _ .+. RelProtocolUri host path query
+        = Uri protocol host path query
+Uri protocol host _ _ .+. RelHostUri path query = Uri protocol host path query
+Uri protocol host path _ .+. RelPathUri up path' query
+        = Uri protocol host (SG.fromList newPath) query
+    where
+        newPath = reverse (drop up . SG.tail . SG.reverse $ path)
+                  ++ SG.toList path'
+uri .+. SameUri = uri
+
+protocolPort :: Protocol -> Int
+protocolPort Http = 80
+protocolPort Https = 443
+
+bsFromUri :: Uri -> ByteString
+bsFromUri (Uri protocol authority path query) = mconcat [
+        case protocol of { Http -> "http://" ; Https -> "https://" },
+        bsFromAuthority protocol authority,
+        Z.toByteString $ HTTP.encodePath (SG.toList path) query]
 
 
 newtype Sites' m = Sites (Map ByteString (DefMap Int (Site' m), -- here
@@ -143,11 +192,10 @@ atomiseHost :: ByteString -> NonEmpty ByteString
 atomiseHost = fromJust . nonEmpty . BC.split '.'
 
 
-newtype Site' m = Site (NonEmpty Text -> HTTP.Query -> m (Resource' m))
+newtype Site' m = Site (Path -> Query -> m (Resource' m))
 type Site = Site' IO
 
-retrieveResource :: Monad m =>
-                    Site' m -> NonEmpty Text -> HTTP.Query -> m (Resource' m)
+retrieveResource :: Monad m => Site' m -> Path -> Query -> m (Resource' m)
 retrieveResource (Site site) = site
 
 
@@ -201,7 +249,7 @@ data MissingResource' m = MissingResource {
         _missingBecause :: MissingBecause' m}
 
 data MissingBecause' m
-        = Moved Transience ByteString   --TODO: better type for url
+        = Moved Transience RelUri
         | NotFound NotFound (Maybe (m Entity))
 
 data Transience = Permanently | Temporarily
@@ -255,18 +303,20 @@ defaultUgly (UglyStatus headers status) = do
 
 
 data Settings = Settings {
-        _settingsDefaultPort :: Int,
+        _settingsProtocol :: Protocol,
         _settingsSites :: Sites,
         _settingsOnException :: X.IOException -> IO ()}
 $(L.makeLenses ''Settings)
 
 waiApplicationFromSitesForHttp :: (Settings -> Settings) -> WAI.Application
 waiApplicationFromSitesForHttp f
-        = waiApplicationFromSites ((settingsDefaultPort .~ 80) . f)
+        = waiApplicationFromSites
+          $ (settingsProtocol .~ Http) . f
 
 waiApplicationFromSitesForHttps :: (Settings -> Settings) -> WAI.Application
 waiApplicationFromSitesForHttps f
-        = waiApplicationFromSites ((settingsDefaultPort .~ 443) . f)
+        = waiApplicationFromSites
+          $ (settingsProtocol .~ Https) . f
 
 waiApplicationFromSites :: (Settings -> Settings) -> WAI.Application
 {- ^ Formalisation of
@@ -274,48 +324,49 @@ waiApplicationFromSites :: (Settings -> Settings) -> WAI.Application
 -}
 waiApplicationFromSites f request
         = runHttpT defaultUgly
-                   (httpMain (settings ^. settingsDefaultPort)
+                   (httpMain (settings ^. settingsProtocol)
                              (settings ^. settingsSites))
                    request
            `X.catch` panic
     where
-        settings = f $ Settings 0 mempty (const $ return ())
+        settings = f $ Settings Http mempty (const $ return ())
         panic :: X.IOException -> IO WAI.Response
         panic e = do
                 (settings ^. settingsOnException) e
                 runHttpT defaultUgly (oops HTTP.internalServerError500) request
 
 
-httpMain :: Monad m => Int -> Sites' m -> HttpT m WAI.Response
-httpMain defaultPort sites = do
+httpMain :: Monad m => Protocol -> Sites' m -> HttpT m WAI.Response
+httpMain protocol sites = do
 
         authority
-         <- maybe (oops HTTP.badRequest400)
-                  (return . parseAuthority defaultPort)
+         <- maybe (oops HTTP.badRequest400) return
+            . (parseAuthority (protocolPort protocol) =<<)
             =<< asksRequest WAI.requestHeaderHost
 
         site
-         <- maybe (oops HTTP.badRequest400) return
-            $ flip lookupSite sites =<< authority
+         <- maybe (oops HTTP.badRequest400) return $ lookupSite authority sites
 
         method
          <- maybe (oops HTTP.notImplemented501) return
             =<< asksRequest (parseMethod . WAI.requestMethod)
 
-        (either <$> handleMissingResource <*> handleExistingResource) method
-            =<< lift
-            =<< asksRequest (retrieveResource site
-                             <$> fromMaybe (pure "") . nonEmpty . WAI.pathInfo
-                             <*> WAI.queryString)
+        path <- asksRequest $ fromMaybe (pure "") . nonEmpty . WAI.pathInfo
+        query <- asksRequest WAI.queryString
+        let uri = Uri protocol authority path query
+
+        (either <$> handleMissingResource uri <*> handleExistingResource) method
+            =<< lift (retrieveResource site path query)
 
 
 handleMissingResource
-        :: Monad m => Method -> MissingResource' m -> HttpT m WAI.Response
-handleMissingResource method resource = do
+        :: Monad m =>
+           Uri -> Method -> MissingResource' m -> HttpT m WAI.Response
+handleMissingResource uri method resource = do
         --TODO: potentially handle PUT
         case resource ^. missingBecause of
-                Moved transience location
-                  -> oops' [(HTTP.hLocation, location)]
+                Moved transience relUri
+                  -> oops' [(HTTP.hLocation, bsFromUri $ uri .+. relUri)]
                      $ case transience of
                         Permanently -> HTTP.movedPermanently301
                         Temporarily -> HTTP.temporaryRedirect307
