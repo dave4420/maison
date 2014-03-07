@@ -51,6 +51,7 @@ executable maison
   build-depends:       maison
                      , base
                      , blaze-html
+                     , bytestring
                      , containers
                      , directory
                      , filepath

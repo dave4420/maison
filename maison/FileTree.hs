@@ -19,6 +19,9 @@ import           Text.Blaze.Html
 import qualified Text.Blaze.Html5            as HT
 import qualified Text.Blaze.Html5.Attributes as AT
 
+-- bytestring
+import qualified Data.ByteString             as B
+
 -- directory
 import           System.Directory (getDirectoryContents)
 
@@ -37,6 +40,7 @@ import qualified Data.List.NonEmpty          as SG
 -- text
 import           Data.Text (Text)
 import qualified Data.Text                   as T
+import qualified Data.Text.Encoding          as T
 
 -- unix
 import           System.Posix.Files (getFileStatus, isDirectory, isRegularFile)
@@ -104,7 +108,20 @@ directoryEntity titles (nds, nfs)
 
 fileResource
         :: NonEmpty Text -> FilePath -> [Text] -> Query -> IO Resource
-fileResource _titles _nd _path _query = fail "Unimplemented"
+fileResource titles nf = textFileResource titles nf
+
+textFileResource
+        :: NonEmpty Text -> FilePath -> [Text] -> Query -> IO Resource
+textFileResource titles nf [] _query = return . existingResource
+        $ existingGet .~ Just get
+    where
+        get = do
+                bs <- B.readFile nf
+                let t = T.decodeUtf8 bs
+                return
+                    . entityFromPage (breadcrumbsFromTitles titles)
+                    $ HT.pre (toHtml t)
+textFileResource _titles _nf _path _query = return . missingResource $ id
 
 
 breadcrumbsFromTitles :: NonEmpty Text -> Breadcrumbs
