@@ -19,7 +19,10 @@ library
   exposed-modules:     Http
                      , Http.InMemory
                      , DefMap
-  -- other-modules:
+  other-modules:       Http.Entity
+                     , Http.Resource
+                     , Http.Sites
+                     , Http.Uri
   -- other-extensions:    
   build-depends:       base
                      , blaze-builder
