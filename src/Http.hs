@@ -5,7 +5,7 @@ module Http (
         module Http.Sites,
         Method(..),
         Settings(), settingsSites, settingsOnException,
-        waiApplicationFromSitesForHttp, waiApplicationFromSitesForHttps,
+        waiApplication,
         NonEmpty(..),
 )
 where
@@ -96,28 +96,18 @@ data Settings = Settings {
         _settingsOnException :: X.IOException -> IO ()}
 $(L.makeLenses ''Settings)
 
-waiApplicationFromSitesForHttp :: (Settings -> Settings) -> WAI.Application
-waiApplicationFromSitesForHttp f
-        = waiApplicationFromSites
-          $ (settingsProtocol .~ Http) . f
-
-waiApplicationFromSitesForHttps :: (Settings -> Settings) -> WAI.Application
-waiApplicationFromSitesForHttps f
-        = waiApplicationFromSites
-          $ (settingsProtocol .~ Https) . f
-
-waiApplicationFromSites :: (Settings -> Settings) -> WAI.Application
+waiApplication :: Protocol -> (Settings -> Settings) -> WAI.Application
 {- ^ Formalisation of
 <http://upload.wikimedia.org/wikipedia/commons/8/8a/Http-headers-status.svg>.
 -}
-waiApplicationFromSites f request
+waiApplication protocol f request
         = runHttpT defaultUgly
                    (httpMain (settings ^. settingsProtocol)
                              (settings ^. settingsSites))
                    request
            `X.catch` panic
     where
-        settings = f $ Settings Http mempty (const $ return ())
+        settings = f $ Settings protocol mempty (const $ return ())
         panic :: X.IOException -> IO WAI.Response
         panic e = do
                 (settings ^. settingsOnException) e

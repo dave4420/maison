@@ -35,7 +35,7 @@ main = do
                 WARP.settingsPort = port,
                 WARP.settingsBeforeMainLoop = maybe (return ()) dropPrivs
                                               $ listToMaybe args}
-            . waiApplicationFromSitesForHttp
+            . waiApplication Http
             $ (settingsSites .~ sites)
               . (settingsOnException
                  .~ (\e -> warningM "" ("Exception: " ++ show e)))
