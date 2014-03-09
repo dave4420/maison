@@ -1,8 +1,14 @@
 module Http (
+        -- * Sites
+        Site, Site',
+        Sites, Sites',
+        singleSite, singleSitePort,
+        underSite, underSitePort,
+        sealSite,
+        -- * Etc
         module Http.Entity,
         module Http.Uri,
         module Http.Resource,
-        module Http.Sites,
         Method(..),
         Settings(), settingsSites, settingsOnException,
         waiApplication,
@@ -12,7 +18,7 @@ where
 
 import           Http.Entity
 import           Http.Resource
-import           Http.Sites
+import qualified Http.Sites                    as Q
 import           Http.Uri
 
 -- base
@@ -47,6 +53,25 @@ import           Control.Monad.Trans.Reader
 
 -- wai
 import qualified Network.Wai                   as WAI
+
+
+type Site' m = Q.Site Resource' m
+type Site = Site' IO
+
+type Sites' m = Q.Sites Resource' m
+type Sites = Sites' IO
+
+singleSite, underSite :: Monad m => ByteString -> Site' m -> Sites' m
+singleSite = Q.singleSite
+underSite = Q.underSite
+
+singleSitePort, underSitePort
+        :: Monad m => ByteString -> Int -> Site' m -> Sites' m
+singleSitePort = Q.singleSitePort
+underSitePort = Q.underSitePort
+
+sealSite :: (Path -> Query -> m (Resource' m)) -> Site' m
+sealSite = Q.sealSite
 
 
 data Method = HEAD | GET
@@ -123,7 +148,8 @@ httpMain protocol sites = do
             =<< asksRequest WAI.requestHeaderHost
 
         site
-         <- maybe (oops HTTP.badRequest400) return $ lookupSite authority sites
+         <- maybe (oops HTTP.badRequest400) return
+            $ sites ^. Q.atAuthority authority
 
         method
          <- maybe (oops HTTP.notImplemented501) return
@@ -133,8 +159,10 @@ httpMain protocol sites = do
         query <- asksRequest WAI.queryString
         let uri = Uri protocol authority path query
 
-        (either <$> handleMissingResource uri <*> handleExistingResource) method
-            =<< lift (retrieveResource site path query)
+        (eitherResource <$> handleMissingResource uri
+                        <*> handleExistingResource)
+            method
+            =<< lift (site ^! Q.atPathQuery path query)
 
 
 handleMissingResource

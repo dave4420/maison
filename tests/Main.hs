@@ -101,7 +101,7 @@ setHost host request = request {WAI.requestHeaderHost = Just host,
 
 
 reflectUrl :: ByteString -> Site
-reflectUrl host = Site $ \path query -> let
+reflectUrl host = sealSite $ \path query -> let
         entity = entityFromStrictByteString "content/type" bs
         bs = mconcat [
                 "//",

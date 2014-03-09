@@ -1,5 +1,6 @@
 module Http.Resource (
         Resource, Resource',
+        eitherResource,
         ExistingResource, ExistingResource'(), existingResource,
         existingGet,
         MissingResource, MissingResource'(), missingResource,
@@ -20,7 +21,10 @@ import qualified Control.Lens                  as L
 type Resource = Resource' IO
 type MissingResource = MissingResource' IO
 type ExistingResource = ExistingResource' IO
-type Resource' m = Either (MissingResource' m) (ExistingResource' m)
+
+data Resource' m
+        = Missing (MissingResource' m)
+        | Existing (ExistingResource' m)
 
 data MissingResource' m = MissingResource {
         _missingBecause :: MissingBecause' m}
@@ -40,8 +44,16 @@ $(L.makeLenses ''ExistingResource')
 
 missingResource :: Monad m =>
                    (MissingResource' m -> MissingResource' m) -> Resource' m
-missingResource f = Left . f . MissingResource $ NotFound NeverExisted Nothing
+missingResource f
+        = Missing . f . MissingResource $ NotFound NeverExisted Nothing
 
 existingResource :: Monad m =>
                     (ExistingResource' m -> ExistingResource' m) -> Resource' m
-existingResource f = Right . f . ExistingResource $ Nothing
+existingResource f = Existing . f . ExistingResource $ Nothing
+
+eitherResource :: (MissingResource' m -> a) ->
+                  (ExistingResource' m -> a) ->
+                  Resource' m ->
+                  a
+eitherResource f _ (Missing x) = f x
+eitherResource _ g (Existing y) = g y

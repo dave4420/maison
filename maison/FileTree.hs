@@ -50,7 +50,7 @@ tryIOException :: IO a -> IO (Either IOException a)
 tryIOException = try
 
 fileTreeSite :: Text -> FilePath -> Site
-fileTreeSite title' nd = Site $ \path query
+fileTreeSite title' nd = sealSite $ \path query
     -> if (F.any . T.any) ('/' ==) path
           then return $ missingResource id
           else fetchResource (pure title') nd (F.toList path) query
