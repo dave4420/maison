@@ -1,59 +1,56 @@
 module Http.Resource (
-        Resource, Resource',
+        Resource(),
         eitherResource,
-        ExistingResource, ExistingResource'(), existingResource,
+        ExistingResource(), existingResource,
         existingGet,
-        MissingResource, MissingResource'(), missingResource,
+        MissingResource(), missingResource,
         missingBecause,
-        MissingBecause'(..),
+        MissingBecause(..),
         Transience(..),
         NotFound(..),
 )
 where
 
-import           Http.Entity
 import           Http.Uri
 
 -- lens
 import qualified Control.Lens                  as L
 
 
-type Resource = Resource' IO
-type MissingResource = MissingResource' IO
-type ExistingResource = ExistingResource' IO
+data Resource r m
+        = Missing (MissingResource r m)
+        | Existing (ExistingResource r m)
 
-data Resource' m
-        = Missing (MissingResource' m)
-        | Existing (ExistingResource' m)
+data MissingResource r m = MissingResource {
+        _missingBecause :: MissingBecause r m}
 
-data MissingResource' m = MissingResource {
-        _missingBecause :: MissingBecause' m}
-
-data MissingBecause' m
+data MissingBecause r m
         = Moved Transience RelUri
-        | NotFound NotFound (Maybe (m Entity))
+        | NotFound NotFound (Maybe (m r))
 
 data Transience = Permanently | Temporarily
 data NotFound = Gone | NeverExisted
 
-data ExistingResource' m = ExistingResource {
-        _existingGet :: Maybe (m Entity)}
+data ExistingResource r m = ExistingResource {
+        _existingGet :: Maybe (m r)}
 
-$(L.makeLenses ''MissingResource')
-$(L.makeLenses ''ExistingResource')
+$(L.makeLenses ''MissingResource)
+$(L.makeLenses ''ExistingResource)
 
 missingResource :: Monad m =>
-                   (MissingResource' m -> MissingResource' m) -> Resource' m
+                   (MissingResource r m -> MissingResource r m) ->
+                   Resource r m
 missingResource f
         = Missing . f . MissingResource $ NotFound NeverExisted Nothing
 
 existingResource :: Monad m =>
-                    (ExistingResource' m -> ExistingResource' m) -> Resource' m
+                    (ExistingResource r m -> ExistingResource r m) ->
+                    Resource r m
 existingResource f = Existing . f . ExistingResource $ Nothing
 
-eitherResource :: (MissingResource' m -> a) ->
-                  (ExistingResource' m -> a) ->
-                  Resource' m ->
+eitherResource :: (MissingResource r m -> a) ->
+                  (ExistingResource r m -> a) ->
+                  Resource r m ->
                   a
 eitherResource f _ (Missing x) = f x
 eitherResource _ g (Existing y) = g y

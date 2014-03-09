@@ -5,10 +5,18 @@ module Http (
         singleSite, singleSitePort,
         underSite, underSitePort,
         sealSite,
+        -- * Resources
+        Resource, Resource',
+        ExistingResource, ExistingResource'(), existingResource,
+        existingGet,
+        MissingResource, MissingResource'(), missingResource,
+        missingBecause,
+        MissingBecause, MissingBecause', moved, notFound,
+        QR.Transience(..),
+        QR.NotFound(..),
         -- * Etc
         module Http.Entity,
         module Http.Uri,
-        module Http.Resource,
         Method(..),
         Settings(), settingsSites, settingsOnException,
         waiApplication,
@@ -17,8 +25,8 @@ module Http (
 where
 
 import           Http.Entity
-import           Http.Resource
-import qualified Http.Sites                    as Q
+import qualified Http.Resource                 as QR
+import qualified Http.Sites                    as QS
 import           Http.Uri
 
 -- base
@@ -55,23 +63,56 @@ import           Control.Monad.Trans.Reader
 import qualified Network.Wai                   as WAI
 
 
-type Site' m = Q.Site Resource' m
+type Site' m = QS.Site (QR.Resource Entity) m
 type Site = Site' IO
 
-type Sites' m = Q.Sites Resource' m
+type Sites' m = QS.Sites (QR.Resource Entity) m
 type Sites = Sites' IO
 
 singleSite, underSite :: Monad m => ByteString -> Site' m -> Sites' m
-singleSite = Q.singleSite
-underSite = Q.underSite
+singleSite = QS.singleSite
+underSite = QS.underSite
 
 singleSitePort, underSitePort
         :: Monad m => ByteString -> Int -> Site' m -> Sites' m
-singleSitePort = Q.singleSitePort
-underSitePort = Q.underSitePort
+singleSitePort = QS.singleSitePort
+underSitePort = QS.underSitePort
 
 sealSite :: (Path -> Query -> m (Resource' m)) -> Site' m
-sealSite = Q.sealSite
+sealSite = QS.sealSite
+
+
+type Resource = Resource' IO
+type MissingResource = MissingResource' IO
+type ExistingResource = ExistingResource' IO
+type MissingBecause = MissingBecause' IO
+
+type Resource' m = QR.Resource Entity m
+type MissingResource' m = QR.MissingResource Entity m
+type ExistingResource' m = QR.ExistingResource Entity m
+type MissingBecause' m = QR.MissingBecause Entity m
+
+missingResource :: Monad m =>
+                   (MissingResource' m -> MissingResource' m) ->
+                   Resource' m
+missingResource = QR.missingResource
+
+missingBecause :: L.Lens' (MissingResource' m) (MissingBecause' m)
+missingBecause = QR.missingBecause
+
+moved :: Monad m => QR.Transience -> RelUri -> MissingBecause' m
+moved = QR.Moved
+
+notFound :: Monad m => QR.NotFound -> Maybe (m Entity) -> MissingBecause' m
+notFound = QR.NotFound
+
+existingResource :: Monad m =>
+                    (ExistingResource' m -> ExistingResource' m) ->
+                    Resource' m
+existingResource = QR.existingResource
+
+existingGet :: L.Lens' (ExistingResource' m) (Maybe (m Entity))
+existingGet = QR.existingGet
 
 
 data Method = HEAD | GET
@@ -149,7 +190,7 @@ httpMain protocol sites = do
 
         site
          <- maybe (oops HTTP.badRequest400) return
-            $ sites ^. Q.atAuthority authority
+            $ sites ^. QS.atAuthority authority
 
         method
          <- maybe (oops HTTP.notImplemented501) return
@@ -159,10 +200,10 @@ httpMain protocol sites = do
         query <- asksRequest WAI.queryString
         let uri = Uri protocol authority path query
 
-        (eitherResource <$> handleMissingResource uri
-                        <*> handleExistingResource)
+        (QR.eitherResource <$> handleMissingResource uri
+                           <*> handleExistingResource)
             method
-            =<< lift (site ^! Q.atPathQuery path query)
+            =<< lift (site ^! QS.atPathQuery path query)
 
 
 handleMissingResource
@@ -171,20 +212,20 @@ handleMissingResource
 handleMissingResource uri method resource = do
         --TODO: potentially handle PUT
         case resource ^. missingBecause of
-                Moved transience relUri
+                QR.Moved transience relUri
                   -> oops' [(HTTP.hLocation, bsFromUri $ uri .+. relUri)]
                      $ case transience of
-                        Permanently -> HTTP.movedPermanently301
-                        Temporarily -> HTTP.temporaryRedirect307
-                NotFound why mkEntity
+                        QR.Permanently -> HTTP.movedPermanently301
+                        QR.Temporarily -> HTTP.temporaryRedirect307
+                QR.NotFound why mkEntity
                         --TODO: potentially handle POST
                   -> maybe (oops status)
                            (liftM (waiResponse (method == HEAD) status) . lift)
                            mkEntity
                   where
                         status = case why of
-                                Gone         -> HTTP.gone410
-                                NeverExisted -> HTTP.notFound404
+                                QR.Gone         -> HTTP.gone410
+                                QR.NeverExisted -> HTTP.notFound404
 
 
 handleExistingResource

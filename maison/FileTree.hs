@@ -60,7 +60,7 @@ fetchResource
 fetchResource titles nd path query = case path of
         [] -> return . missingResource
               $ missingBecause
-                .~ Moved Permanently
+                .~ moved Permanently
                          (RelPathUri 0 (pure $ SG.head titles) query)
         [""] -> return $ directoryResource titles nd
         pathHead : pathTail
