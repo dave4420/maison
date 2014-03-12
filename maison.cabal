@@ -19,12 +19,16 @@ library
   exposed-modules:     Http
                      , Http.InMemory
                      , DefMap
-  other-modules:       Http.Entity
+  other-modules:       Http.Auth
+                     , Http.Entity
                      , Http.Resource
                      , Http.Sites
                      , Http.Uri
   -- other-extensions:    
-  build-depends:       base
+  --TODO: attoparsec-0.11 is available
+  build-depends:       attoparsec == 0.10.*
+                     , base
+                     , base64-bytestring == 1.0.*
                      , blaze-builder
                      , blaze-html == 0.7.*
                      , bytestring

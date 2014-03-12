@@ -5,6 +5,10 @@ module Http (
         singleSite, singleSitePort,
         underSite, underSitePort,
         sealSite,
+        -- * Auth
+        Auth, Auth',
+        AuthChallenge, AuthChallenge',
+        AuthResult, AuthResult',
         -- * Resources
         Resource, Resource',
         ExistingResource, ExistingResource'(), existingResource,
@@ -24,6 +28,7 @@ module Http (
 )
 where
 
+import qualified Http.Auth                     as QA
 import           Http.Entity
 import qualified Http.Resource                 as QR
 import qualified Http.Sites                    as QS
@@ -63,10 +68,10 @@ import           Control.Monad.Trans.Reader
 import qualified Network.Wai                   as WAI
 
 
-type Site' m = QS.Site (QR.Resource Entity) m
+type Site' m = QS.Site (QA.Auth QR.Resource Entity) m
 type Site = Site' IO
 
-type Sites' m = QS.Sites (QR.Resource Entity) m
+type Sites' m = QS.Sites (QA.Auth QR.Resource Entity) m
 type Sites = Sites' IO
 
 singleSite, underSite :: Monad m => ByteString -> Site' m -> Sites' m
@@ -78,8 +83,17 @@ singleSitePort, underSitePort
 singleSitePort = QS.singleSitePort
 underSitePort = QS.underSitePort
 
-sealSite :: (Path -> Query -> m (Resource' m)) -> Site' m
-sealSite = QS.sealSite
+sealSite :: Monad m => (Path -> Query -> m (Resource' m)) -> Site' m
+sealSite = QS.sealSite . (fmap . fmap . liftM) (QA.NoAuth . QA.OK)
+
+
+type Auth = Auth' IO
+type AuthChallenge = AuthChallenge' IO
+type AuthResult = AuthResult' IO
+
+type Auth' m = QA.Auth QR.Resource Entity m
+type AuthChallenge' m = QA.AuthChallenge QR.Resource Entity m
+type AuthResult' m = QA.AuthResult QR.Resource Entity m
 
 
 type Resource = Resource' IO
@@ -192,18 +206,41 @@ httpMain protocol sites = do
          <- maybe (oops HTTP.badRequest400) return
             $ sites ^. QS.atAuthority authority
 
-        method
-         <- maybe (oops HTTP.notImplemented501) return
-            =<< asksRequest (parseMethod . WAI.requestMethod)
-
         path <- asksRequest $ fromMaybe (pure "") . nonEmpty . WAI.pathInfo
         query <- asksRequest WAI.queryString
         let uri = Uri protocol authority path query
 
+        resource
+         <- handleAuthentication
+            =<< lift (site ^! QS.atPathQuery path query)
+
+        method
+         <- maybe (oops HTTP.notImplemented501) return
+            =<< asksRequest (parseMethod . WAI.requestMethod)
+
         (QR.eitherResource <$> handleMissingResource uri
                            <*> handleExistingResource)
             method
-            =<< lift (site ^! QS.atPathQuery path query)
+            resource
+
+
+handleAuthentication :: Monad m => Auth' m -> HttpT m (Resource' m)
+handleAuthentication = \case
+        QA.NoAuth (QA.Forbidden _entity)   -> oops HTTP.forbidden403
+        QA.NoAuth (QA.OK resource)         -> return resource
+        QA.AuthRequired challenges _entity -> do
+                result
+                 <- maybe (return $ QA.Forbidden Nothing) lift
+                    =<< asksRequest (QA.checkAuthentication challenges
+                                     <=< lookup HTTP.hAuthorization
+                                         . WAI.requestHeaders)
+                case result of
+                        QA.Forbidden _entity'
+                          -> oops' [("WWW-Authenticate",
+                                     QA.renderChallenges challenges)]
+                                   HTTP.unauthorized401
+                        QA.OK resource
+                          -> return resource
 
 
 handleMissingResource
