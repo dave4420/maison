@@ -38,7 +38,7 @@ import           Data.Time
 
 
 ledgerSite :: String -> FilePath -> Site
-ledgerSite title' nf = sealSite $ \path _query -> case path of
+ledgerSite title' nf = sealSiteNoAuth $ \path _query -> case path of
         "" :| []          -> go Nothing
         accountName :| [] -> go (Just accountName)
         _                 -> return $ missingResource id

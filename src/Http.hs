@@ -4,7 +4,6 @@ module Http (
         Sites, Sites',
         singleSite, singleSitePort,
         underSite, underSitePort,
-        sealSite,
         -- * Auth
         Auth, Auth',
         AuthChallenge, AuthChallenge',
@@ -19,6 +18,7 @@ module Http (
         QR.Transience(..),
         QR.NotFound(..),
         -- * Etc
+        sealSite, sealSiteNoAuth,
         module Http.Entity,
         module Http.Uri,
         Method(..),
@@ -83,9 +83,6 @@ singleSitePort, underSitePort
 singleSitePort = QS.singleSitePort
 underSitePort = QS.underSitePort
 
-sealSite :: Monad m => (Path -> Query -> m (Resource' m)) -> Site' m
-sealSite = QS.sealSite . (fmap . fmap . liftM) (QA.NoAuth . QA.OK)
-
 
 type Auth = Auth' IO
 type AuthChallenge = AuthChallenge' IO
@@ -127,6 +124,13 @@ existingResource = QR.existingResource
 
 existingGet :: L.Lens' (ExistingResource' m) (Maybe (m Entity))
 existingGet = QR.existingGet
+
+
+sealSite :: Monad m => (Path -> Query -> m (Auth' m)) -> Site' m
+sealSite = QS.sealSite
+
+sealSiteNoAuth :: Monad m => (Path -> Query -> m (Resource' m)) -> Site' m
+sealSiteNoAuth = sealSite . (fmap . fmap . liftM) QA.noAuth
 
 
 data Method = HEAD | GET

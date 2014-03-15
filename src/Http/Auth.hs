@@ -78,3 +78,20 @@ base64Encoded f
         = either fail return . (f <=< B64.decode) =<< ABC.takeWhile1 isBase64
     where
         isBase64 ch = ABC.isAlpha_ascii ch || ABC.isDigit ch || elem ch "+/="
+
+
+noAuth :: r e m -> Auth r e m
+noAuth = NoAuth . OK
+
+basicAuth :: Monad m
+          => Realm
+             -> (Username -> Password -> m Bool)
+             -> (Username -> m (r e m))
+             -> Auth r e m
+basicAuth realm checkCredentials result = AuthRequired [Basic realm go] Nothing
+    where
+        go username givenPassword = do
+                isCorrect <- checkCredentials username givenPassword
+                if isCorrect
+                   then OK `liftM` result username
+                   else return $ Forbidden Nothing
