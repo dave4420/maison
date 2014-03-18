@@ -65,7 +65,7 @@ multiUserFileTreeSite title' usernames = sealSite $ \path query
                    = return $ T.encodeUtf8 user == username
                               && username == password   --TODO
            resource = case path of
---                   "" :| [] -> return rootResource
+                   "" :| [] -> return rootResource
                    _ | Just nd <- M.lookup user home
                      -> fetchResource (user :| [title']) nd subpath query
                      | otherwise -> return $ missingResource id
@@ -75,6 +75,17 @@ multiUserFileTreeSite title' usernames = sealSite $ \path query
     where
         home = M.fromList . map (\user -> (user, "/home/" ++ T.unpack user))
                $ usernames
+        rootResource = existingResource $ existingGet ?~ return entity where
+                entity = entityFromPage (breadcrumbsFromTitles $ pure title')
+                         . HT.ul
+                         . F.foldMap f
+                         $ M.keys home
+                f n = HT.li $ mconcat [pub, " ", priv] where
+                        pub = HT.a ! AT.href (HT.toValue n <> "/vc.ln/pub/")
+                              $ toHtml n
+                        priv = HT.small
+                               $ HT.a ! AT.href (HT.toValue n <> "/")
+                               $ "(private)"
 
 
 fetchResource
