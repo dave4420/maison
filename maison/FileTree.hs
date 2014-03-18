@@ -1,4 +1,4 @@
-module FileTree (fileTreeSite) where
+module FileTree (fileTreeSite, multiUserFileTreeSite) where
 
 -- base
 import qualified Data.Foldable               as F
@@ -21,6 +21,9 @@ import qualified Text.Blaze.Html5.Attributes as AT
 
 -- bytestring
 import qualified Data.ByteString             as B
+
+-- containers
+import qualified Data.Map                    as M
 
 -- directory
 import           System.Directory (getDirectoryContents)
@@ -54,6 +57,25 @@ fileTreeSite title' nd = sealSiteNoAuth $ \path query
     -> if (F.any . T.any) ('/' ==) path
           then return $ missingResource id
           else fetchResource (pure title') nd (F.toList path) query
+
+multiUserFileTreeSite :: Text -> [Text] -> Site
+multiUserFileTreeSite title' usernames = sealSite $ \path query
+    -> let user :| subpath = path
+           checkPassword username password
+                   = return $ T.encodeUtf8 user == username
+                              && username == password   --TODO
+           resource = case path of
+--                   "" :| [] -> return rootResource
+                   _ | Just nd <- M.lookup user home
+                     -> fetchResource (user :| [title']) nd subpath query
+                     | otherwise -> return $ missingResource id
+       in if M.member user home && not (["vc.ln", "pub"] `isPrefixOf` subpath)
+             then return . basicAuth "Dionysus" checkPassword $ const resource
+             else noAuth <$> resource
+    where
+        home = M.fromList . map (\user -> (user, "/home/" ++ T.unpack user))
+               $ usernames
+
 
 fetchResource
         :: NonEmpty Text -> FilePath -> [Text] -> Query -> IO Resource

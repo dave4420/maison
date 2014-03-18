@@ -8,6 +8,9 @@ module Http (
         Auth, Auth',
         AuthChallenge, AuthChallenge',
         AuthResult, AuthResult',
+        QA.Realm, QA.Username, QA.Password,
+        noAuth,
+        basicAuth,
         -- * Resources
         Resource, Resource',
         ExistingResource, ExistingResource'(), existingResource,
@@ -91,6 +94,16 @@ type AuthResult = AuthResult' IO
 type Auth' m = QA.Auth QR.Resource Entity m
 type AuthChallenge' m = QA.AuthChallenge QR.Resource Entity m
 type AuthResult' m = QA.AuthResult QR.Resource Entity m
+
+noAuth :: Resource' m -> Auth' m
+noAuth = QA.noAuth
+
+basicAuth :: Monad m
+          => QA.Realm
+             -> (QA.Username -> QA.Password -> m Bool)
+             -> (QA.Username -> m (Resource' m))
+             -> Auth' m
+basicAuth = QA.basicAuth
 
 
 type Resource = Resource' IO

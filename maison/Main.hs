@@ -66,4 +66,6 @@ sites = mconcat [
         $ ledgerSite "102 Richmond Road Accounts"
                      "/home/dave/notes/102-richmond-road.journal",
         singleSite "dave.dionysus"
-        $ fileTreeSite "~dave" "/home/dave"]
+        $ fileTreeSite "~dave" "/home/dave",
+        singleSite "all.dionysus"
+        $ multiUserFileTreeSite "Dionysus" ["dave"]]
