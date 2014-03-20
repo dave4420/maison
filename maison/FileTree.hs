@@ -9,6 +9,7 @@ import           Page
 import           Control.Applicative
 import           Control.Arrow
 import           Control.Exception
+import           Control.Monad
 import           Data.Either
 import           Data.List
 import           Data.Maybe
@@ -21,6 +22,7 @@ import qualified Text.Blaze.Html5.Attributes as AT
 
 -- bytestring
 import qualified Data.ByteString             as B
+import qualified Data.ByteString.Char8       as BC
 
 -- containers
 import qualified Data.Map                    as M
@@ -62,8 +64,17 @@ multiUserFileTreeSite :: Text -> [Text] -> Site
 multiUserFileTreeSite title' usernames = sealSite $ \path query
     -> let user :| subpath = path
            checkPassword username password
-                   = return $ T.encodeUtf8 user == username
-                              && username == password   --TODO
+               --TODO: plug into PAM instead
+               | T.encodeUtf8 user == username
+                           = do
+                   let nf = (</> ".password") <$> M.lookup user home
+                   pw <- maybe (return Nothing)
+                               (liftM (fmap (BC.takeWhile (>= ' '))
+                                       . hushSomeException)
+                                . try . B.readFile)
+                               nf
+                   return $ Just password ==  pw
+               | otherwise = return False
            resource = case path of
                    "" :| [] -> return rootResource
                    _ | Just nd <- M.lookup user home
@@ -160,3 +171,7 @@ textFileResource _titles _nf _path _query = return . missingResource $ id
 breadcrumbsFromTitles :: NonEmpty Text -> Breadcrumbs
 breadcrumbsFromTitles = zipWith (flip (,)) hrefs . map toHtml . F.toList where
         hrefs = map toValue $ ("./" :: Text) : iterate ("../" <>) "../"
+
+
+hushSomeException :: Either SomeException a -> Maybe a
+hushSomeException = const Nothing ||| Just
