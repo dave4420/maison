@@ -8,6 +8,7 @@ import           Control.Applicative
 import           Control.Arrow
 import           Control.Exception
 import           Control.Monad
+import           Data.Char
 import           Data.Either
 import qualified Data.Foldable               as F
 import           Data.List
@@ -24,6 +25,7 @@ import qualified Data.ByteString             as B
 import qualified Data.ByteString.Char8       as BC
 
 -- containers
+import           Data.Map (Map)
 import qualified Data.Map                    as M
 
 -- directory
@@ -149,14 +151,24 @@ directoryEntity titles (nds, nfs)
                            $ toHtml nd <> "/"
         htFile nf = HT.li $ HT.a ! AT.href (HT.toValue nf) $ toHtml nf
 
-fileResource
-        :: NonEmpty Text -> FilePath -> [Text] -> Query -> IO Resource
-fileResource titles nf = case takeExtension nf of
-        ".journal" -> ledgerFileResource titles nf
-        _          -> textFileResource titles nf
 
-textFileResource
-        :: NonEmpty Text -> FilePath -> [Text] -> Query -> IO Resource
+type ResourceHandler
+        = NonEmpty Text -> FilePath -> [Text] -> Query -> IO Resource
+
+fileResource :: ResourceHandler
+fileResource titles nf = M.findWithDefault textFileResource
+                                           (map toLower $ takeExtension nf)
+                                           extensionHandlers
+                                           titles
+                                           nf
+
+extensionHandlers :: Map String ResourceHandler
+extensionHandlers = M.fromList . concat $ [
+        ["journal"] >< ledgerFileResource]
+    where
+        keys >< value = flip (,) value . ('.' :) <$> keys
+
+textFileResource :: ResourceHandler
 textFileResource titles nf [] _query = return . existingResource
         $ existingGet .~ Just get
     where
