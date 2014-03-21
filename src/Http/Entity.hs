@@ -1,6 +1,7 @@
 module Http.Entity (
         Entity(),
         entityFromStrictText, entityFromStrictByteString, entityFromHtml,
+        entityFromFile,
         ExtraHeader(..),
         unExtraHeader,
         EntityBody(..),
@@ -62,6 +63,11 @@ entityFromHtml html = Entity{..} where
         entityExtraHeaders = []
         entityType = "text/html; charset=utf-8"
         entityBody = EntityBodyFromBuilder (ZH.renderHtmlBuilder html)
+
+entityFromFile :: ByteString -> FilePath -> Entity
+entityFromFile entityType nf = Entity{..} where
+        entityExtraHeaders = []
+        entityBody = EntityBodyFromFile nf Nothing
 
 
 waiResponse :: Bool -> HTTP.Status -> Entity -> WAI.Response
