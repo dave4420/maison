@@ -1,8 +1,6 @@
 module FileTree (fileTreeSite, multiUserFileTreeSite) where
 
--- base
-import qualified Data.Foldable               as F
-
+import           Ledger
 import           Page
 
 -- base
@@ -11,6 +9,7 @@ import           Control.Arrow
 import           Control.Exception
 import           Control.Monad
 import           Data.Either
+import qualified Data.Foldable               as F
 import           Data.List
 import           Data.Maybe
 import           Data.Monoid
@@ -31,7 +30,7 @@ import qualified Data.Map                    as M
 import           System.Directory (getDirectoryContents)
 
 -- filepath
-import           System.FilePath ((</>))
+import           System.FilePath ((</>), takeExtension)
 
 -- lens
 import           Control.Lens.Operators
@@ -105,7 +104,7 @@ fetchResource titles nd path query = case path of
         [] -> return . missingResource
               $ missingBecause
                 .~ moved Permanently
-                         (RelPathUri 0 (pure $ SG.head titles) query)
+                         (RelPathUri 0 (SG.head titles :| [""]) query)
         [""] -> return $ directoryResource titles nd
         pathHead : pathTail
           -> tryIOException (getFileStatus nf) >>= \case
@@ -152,7 +151,9 @@ directoryEntity titles (nds, nfs)
 
 fileResource
         :: NonEmpty Text -> FilePath -> [Text] -> Query -> IO Resource
-fileResource titles nf = textFileResource titles nf
+fileResource titles nf = case takeExtension nf of
+        ".journal" -> ledgerFileResource titles nf
+        _          -> textFileResource titles nf
 
 textFileResource
         :: NonEmpty Text -> FilePath -> [Text] -> Query -> IO Resource

@@ -1,4 +1,4 @@
-module Ledger (ledgerSite) where
+module Ledger (ledgerSite, ledgerFileResource) where
 
 import           Page
 
@@ -30,19 +30,33 @@ import           Http
 -- old-locale
 import           System.Locale
 
+-- semigroups
+import qualified Data.List.NonEmpty          as SG
+
 -- text
+import           Data.Text (Text)
 import qualified Data.Text              as T
 
 -- time
 import           Data.Time
 
 
-ledgerSite :: String -> FilePath -> Site
-ledgerSite title' nf = sealSiteNoAuth $ \path _query -> case path of
-        "" :| []          -> go Nothing
-        accountName :| [] -> go (Just accountName)
-        _                 -> return $ missingResource id
+ledgerSite :: Text -> FilePath -> Site
+ledgerSite title nf
+        = sealSiteNoAuth $ ledgerFileResource (pure title) nf . SG.toList
+
+ledgerFileResource
+        :: NonEmpty Text -> FilePath -> [Text] -> Query -> IO Resource
+ledgerFileResource titles nf path query = case path of
+        []            -> goInside
+        [""]          -> go Nothing
+        [accountName] -> go (Just accountName)
+        _             -> return $ missingResource id
     where
+        goInside = return . missingResource
+                   $ missingBecause
+                     .~ moved Permanently
+                              (RelPathUri 0 (SG.head titles :| [""]) query)
         go sub = do
                 journal
                  <- either fail return
@@ -66,7 +80,12 @@ ledgerSite title' nf = sealSiteNoAuth $ \path _query -> case path of
                 transactions' = transactions breadcrumbs' journal acName
                 breadcrumbs' = (fromString acName, "./" <> fromString acName)
                                : breadcrumbs
-        breadcrumbs = [(fromString title', "./")]
+        breadcrumbs = breadcrumbsFromTitles titles
+
+
+breadcrumbsFromTitles :: NonEmpty Text -> Breadcrumbs
+breadcrumbsFromTitles = zipWith (flip (,)) hrefs . map toHtml . F.toList where
+        hrefs = map toValue $ ("./" :: Text) : iterate ("../" <>) "../"
 
 
 balances :: Breadcrumbs -> LEDGER.Journal -> IO Entity
