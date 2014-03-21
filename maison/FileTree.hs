@@ -21,6 +21,7 @@ import qualified Text.Blaze.Html5            as HT
 import qualified Text.Blaze.Html5.Attributes as AT
 
 -- bytestring
+import           Data.ByteString (ByteString)
 import qualified Data.ByteString             as B
 import qualified Data.ByteString.Char8       as BC
 
@@ -164,7 +165,14 @@ fileResource titles nf = M.findWithDefault textFileResource
 
 extensionHandlers :: Map String ResourceHandler
 extensionHandlers = M.fromList . concat $ [
-        ["journal"] >< ledgerFileResource]
+        ["journal"] >< ledgerFileResource,
+        ["html", "htm"] >< binaryFileResource "text/html; charset=utf-8",
+        ["css"] >< binaryFileResource "text/css; charset=utf-8",
+        ["js"] >< binaryFileResource "text/javascript; charset=utf-8",
+        ["jpeg", "jpg", "jpe"] >< binaryFileResource "image/jpeg",
+        ["gif"] >< binaryFileResource "image/gif",
+        ["png"] >< binaryFileResource "image/png",
+        ["pdf"] >< binaryFileResource "application/pdf"]
     where
         keys >< value = flip (,) value . ('.' :) <$> keys
 
@@ -179,6 +187,14 @@ textFileResource titles nf [] _query = return . existingResource
                     . entityFromPage (breadcrumbsFromTitles titles)
                     $ HT.pre (toHtml t)
 textFileResource _titles _nf _path _query = return . missingResource $ id
+
+binaryFileResource :: ByteString -> ResourceHandler
+binaryFileResource mimeType _titles nf [] _query
+        = return . existingResource $ existingGet ?~ get
+    where
+        get = return $ entityFromFile mimeType nf
+binaryFileResource _mimeType _titles _nf _path _query
+        = return . missingResource $ id
 
 
 breadcrumbsFromTitles :: NonEmpty Text -> Breadcrumbs
