@@ -184,7 +184,7 @@ textFileResource titles nf [] _query = return . existingResource
                 bs <- B.readFile nf
                 let t = T.decodeUtf8 bs
                 return
-                    . entityFromPage (breadcrumbsFromTitles titles)
+                    . entityFromPage (breadcrumbsFromTitles' titles)
                     $ HT.pre (toHtml t)
 textFileResource _titles _nf _path _query = return . missingResource $ id
 
@@ -197,9 +197,15 @@ binaryFileResource _mimeType _titles _nf _path _query
         = return . missingResource $ id
 
 
-breadcrumbsFromTitles :: NonEmpty Text -> Breadcrumbs
+breadcrumbsFromTitles :: NonEmpty Text -> Breadcrumbs   -- for directory
 breadcrumbsFromTitles = zipWith (flip (,)) hrefs . map toHtml . F.toList where
         hrefs = map toValue $ ("./" :: Text) : iterate ("../" <>) "../"
+
+breadcrumbsFromTitles' :: NonEmpty Text -> Breadcrumbs  -- for file
+breadcrumbsFromTitles' titles
+        = zipWith (flip (,)) hrefs . map toHtml . F.toList $ titles
+    where
+        hrefs = map toValue $ SG.head titles : "./" : iterate ("../" <>) "../"
 
 
 hushSomeException :: Either SomeException a -> Maybe a

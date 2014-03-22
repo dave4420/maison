@@ -78,14 +78,22 @@ ledgerFileResource titles nf path query = case path of
                 = existingResource $ existingGet .~ Just transactions'
             where
                 transactions' = transactions breadcrumbs' journal acName
-                breadcrumbs' = (fromString acName, "./" <> fromString acName)
-                               : breadcrumbs
+                breadcrumbs' = breadcrumbsFromTitles'
+                               $ (T.pack acName) SG.<| titles
         breadcrumbs = breadcrumbsFromTitles titles
 
 
 breadcrumbsFromTitles :: NonEmpty Text -> Breadcrumbs
 breadcrumbsFromTitles = zipWith (flip (,)) hrefs . map toHtml . F.toList where
         hrefs = map toValue $ ("./" :: Text) : iterate ("../" <>) "../"
+
+breadcrumbsFromTitles' :: NonEmpty Text -> Breadcrumbs  -- for file
+breadcrumbsFromTitles' titles
+        = zipWith (flip (,)) hrefs . map toHtml . F.toList $ titles
+    where
+        hrefs = map toValue $ "./" <> SG.head titles
+                              : "./"
+                              : iterate ("../" <>) "../"
 
 
 balances :: Breadcrumbs -> LEDGER.Journal -> IO Entity
