@@ -188,7 +188,6 @@ defaultUgly (UglyStatus headers status) = do
 
 
 data Settings = Settings {
-        _settingsProtocol :: Protocol,
         _settingsSites :: Sites,
         _settingsOnException :: X.IOException -> IO ()}
 $(L.makeLenses ''Settings)
@@ -199,12 +198,11 @@ waiApplication :: Protocol -> (Settings -> Settings) -> WAI.Application
 -}
 waiApplication protocol f request
         = runHttpT defaultUgly
-                   (httpMain (settings ^. settingsProtocol)
-                             (settings ^. settingsSites))
+                   (httpMain protocol (settings ^. settingsSites))
                    request
            `X.catch` panic
     where
-        settings = f $ Settings protocol mempty (const $ return ())
+        settings = f $ Settings mempty (const $ return ())
         panic :: X.IOException -> IO WAI.Response
         panic e = do
                 (settings ^. settingsOnException) e
