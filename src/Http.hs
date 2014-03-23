@@ -28,6 +28,7 @@ module Http (
         Settings(), settingsSites, settingsOnException,
         waiApplication,
         NonEmpty(..),
+        module Control.Monad.Trans.Class,
 )
 where
 
@@ -39,7 +40,6 @@ import           Http.Uri
 
 -- base
 import           Control.Applicative
-import qualified Control.Exception             as X
 import           Control.Monad
 import           Data.Maybe
 import           Data.Monoid
@@ -52,6 +52,9 @@ import           Data.ByteString (ByteString)
 
 -- errors
 import           Control.Error
+
+-- exceptions
+import qualified Control.Monad.Catch           as X
 
 -- http-types
 import qualified Network.HTTP.Types            as HTTP
@@ -146,6 +149,25 @@ sealSiteNoAuth :: Monad m => (Path -> Query -> m (Resource' m)) -> Site' m
 sealSiteNoAuth = sealSite . (fmap . fmap . liftM) QA.noAuth
 
 
+instance X.MonadCatch m => X.MonadCatch (EitherT e m) where
+        throwM = lift . X.throwM
+        catch main recover
+                = EitherT $ X.catch (runEitherT main) (runEitherT . recover)
+        mask = liftMask EitherT runEitherT X.mask
+        uninterruptibleMask = liftMask EitherT runEitherT X.uninterruptibleMask
+
+-- Adapted from MonadCatch instance for Identity in Control.Monad.Catch,
+-- by Edward Kmett.
+liftMask :: X.MonadCatch m
+         => (forall a. m (s a) -> n a)
+            -> (forall a. n a -> m (s a))
+            -> (forall c. ((forall a. m a -> m a) -> m c) -> m c)
+            -> ((forall a. n a -> n a) -> n b)
+            -> n b
+liftMask wrap unwrap mask a = wrap $ mask $ \u -> unwrap (a $ q u) where
+        q u = wrap . u . unwrap
+
+
 data Method = HEAD | GET
     deriving Eq
 
@@ -156,7 +178,7 @@ parseMethod _      = Nothing
 
 
 newtype HttpT m a = HttpT (EitherT UglyStatus (ReaderT WAI.Request m) a)
-    deriving (Functor, Applicative, Monad)
+    deriving (Functor, Applicative, Monad, X.MonadCatch)
 
 instance MonadTrans HttpT where
         lift = HttpT . lift . lift
@@ -164,11 +186,11 @@ instance MonadTrans HttpT where
 data UglyStatus = UglyStatus HTTP.ResponseHeaders HTTP.Status
 
 runHttpT :: Monad m =>
-            (UglyStatus -> ReaderT WAI.Request m a) ->
             HttpT m a ->
+            (UglyStatus -> ReaderT WAI.Request m a) ->
             WAI.Request ->
             m a
-runHttpT ugly (HttpT act) = runReaderT (eitherT ugly return act)
+runHttpT (HttpT act) ugly = runReaderT (eitherT ugly return act)
 
 asksRequest :: Monad m => (WAI.Request -> a) -> HttpT m a
 asksRequest f = HttpT . lift $ asks f
@@ -189,7 +211,7 @@ defaultUgly (UglyStatus headers status) = do
 
 data Settings = Settings {
         _settingsSites :: Sites,
-        _settingsOnException :: X.IOException -> IO ()}
+        _settingsOnException :: IOError -> HttpT IO ()}
 $(L.makeLenses ''Settings)
 
 waiApplication :: Protocol -> (Settings -> Settings) -> WAI.Application
@@ -197,16 +219,16 @@ waiApplication :: Protocol -> (Settings -> Settings) -> WAI.Application
 <http://upload.wikimedia.org/wikipedia/commons/8/8a/Http-headers-status.svg>.
 -}
 waiApplication protocol f request
-        = runHttpT defaultUgly
-                   (httpMain protocol (settings ^. settingsSites))
+        = runHttpT (httpMain protocol (settings ^. settingsSites)
+                    `X.catch` panic)
+                   defaultUgly
                    request
-           `X.catch` panic
     where
         settings = f $ Settings mempty (const $ return ())
-        panic :: X.IOException -> IO WAI.Response
+        panic :: IOError -> HttpT IO WAI.Response
         panic e = do
                 (settings ^. settingsOnException) e
-                runHttpT defaultUgly (oops HTTP.internalServerError500) request
+                oops HTTP.internalServerError500
 
 
 httpMain :: Monad m => Protocol -> Sites' m -> HttpT m WAI.Response

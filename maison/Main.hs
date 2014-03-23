@@ -37,7 +37,7 @@ main = do
             . waiApplication Http
             $ (settingsSites .~ sites)
               . (settingsOnException
-                 .~ (\e -> warningM "" ("Exception: " ++ show e)))
+                 .~ (\e -> lift $ warningM "" ("Exception: " ++ show e)))
 
 initLoggingForDaemon :: IO ()
 initLoggingForDaemon = do

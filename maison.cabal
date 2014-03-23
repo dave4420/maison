@@ -34,6 +34,7 @@ library
                      , bytestring
                      , containers
                      , errors == 1.4.*
+                     , exceptions == 0.3.*
                      , http-types
                      , lens == 3.10.*
                      , semigroups == 0.12.*
@@ -49,7 +50,7 @@ library
                      , GeneralizedNewtypeDeriving
                      , LambdaCase
                      , RankNTypes
-  GHC-Options:         -Wall -Werror
+  GHC-Options:         -Wall -Werror -fno-warn-orphans
 
 executable maison
   main-is:             Main.hs
