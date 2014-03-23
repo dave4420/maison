@@ -216,7 +216,6 @@ waiApplication :: Protocol -> (Settings -> Settings) -> WAI.Application
 -}
 waiApplication protocol f request
         = uncurry (waiResponse $ method' == Just HEAD)
---          <$> runReaderT (eitherT (return . defaultUgly) return ermx) request
           <$> maybe (return . defaultUgly $ UglyStatus [] HTTP.badRequest400)
                     (\authority
                      -> runReaderT (eitherT (return . defaultUgly) return ermx)
