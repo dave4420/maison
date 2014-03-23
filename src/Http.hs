@@ -44,9 +44,6 @@ import           Control.Monad
 import           Data.Maybe
 import           Data.Monoid
 
--- blaze-builder
-import qualified Blaze.ByteString.Builder      as Z
-
 -- bytestring
 import           Data.ByteString (ByteString)
 
@@ -201,13 +198,16 @@ oops = oops' []
 oops' :: Monad m => HTTP.ResponseHeaders -> HTTP.Status -> HttpT m a
 oops' headers status = HttpT . left $ UglyStatus headers status
 
-defaultUgly :: Monad m => UglyStatus -> ReaderT WAI.Request m WAI.Response
-defaultUgly (UglyStatus headers status) = do
-        method <- asks WAI.requestMethod
-        return . WAI.responseBuilder status headers $ case method of
-                "HEAD" -> mempty
-                _      -> Z.fromByteString $ HTTP.statusMessage status
+type Response = (HTTP.Status, Entity)
 
+defaultUgly :: Monad m => UglyStatus -> ReaderT WAI.Request m Response
+defaultUgly (UglyStatus headers status)
+        = return
+          . (,) status
+          . concatResponseHeaders headers
+          . entityFromStrictByteString "text/html; charset=utf-8"
+          . HTTP.statusMessage
+          $ status
 
 data Settings = Settings {
         _settingsSites :: Sites,
@@ -219,20 +219,22 @@ waiApplication :: Protocol -> (Settings -> Settings) -> WAI.Application
 <http://upload.wikimedia.org/wikipedia/commons/8/8a/Http-headers-status.svg>.
 -}
 waiApplication protocol f request
-        = runHttpT (httpMain protocol (settings ^. settingsSites)
-                    `X.catch` panic)
-                   defaultUgly
-                   request
+        = uncurry (waiResponse $ method' == Just HEAD)
+          <$> runHttpT (httpMain method' protocol (settings ^. settingsSites)
+                        `X.catch` panic)
+                       defaultUgly
+                       request
     where
         settings = f $ Settings mempty (const $ return ())
-        panic :: IOError -> HttpT IO WAI.Response
+        panic :: IOError -> HttpT IO Response
         panic e = do
                 (settings ^. settingsOnException) e
                 oops HTTP.internalServerError500
+        method' = parseMethod . WAI.requestMethod $ request
 
 
-httpMain :: Monad m => Protocol -> Sites' m -> HttpT m WAI.Response
-httpMain protocol sites = do
+httpMain :: Monad m => Maybe Method -> Protocol -> Sites' m -> HttpT m Response
+httpMain method' protocol sites = do
 
         authority
          <- maybe (oops HTTP.badRequest400) return
@@ -252,13 +254,11 @@ httpMain protocol sites = do
             =<< lift (site ^! QS.atPathQuery path query)
 
         method
-         <- maybe (oops HTTP.notImplemented501) return
-            =<< asksRequest (parseMethod . WAI.requestMethod)
+         <- maybe (oops HTTP.notImplemented501) return method'
 
-        (QR.eitherResource <$> handleMissingResource uri
-                           <*> handleExistingResource)
-            method
-            resource
+        QR.eitherResource (handleMissingResource uri)
+                          (handleExistingResource method)
+                          resource
 
 
 handleAuthentication :: Monad m => Auth' m -> HttpT m (Resource' m)
@@ -282,8 +282,8 @@ handleAuthentication = \case
 
 handleMissingResource
         :: Monad m =>
-           Uri -> Method -> MissingResource' m -> HttpT m WAI.Response
-handleMissingResource uri method resource = do
+           Uri -> MissingResource' m -> HttpT m Response
+handleMissingResource uri resource = do
         --TODO: potentially handle PUT
         case resource ^. missingBecause of
                 QR.Moved transience relUri
@@ -294,7 +294,7 @@ handleMissingResource uri method resource = do
                 QR.NotFound why mkEntity
                         --TODO: potentially handle POST
                   -> maybe (oops status)
-                           (liftM (waiResponse (method == HEAD) status) . lift)
+                           (liftM ((,) status) . lift)
                            mkEntity
                   where
                         status = case why of
@@ -303,7 +303,7 @@ handleMissingResource uri method resource = do
 
 
 handleExistingResource
-        :: Monad m => Method -> ExistingResource' m -> HttpT m WAI.Response
+        :: Monad m => Method -> ExistingResource' m -> HttpT m Response
 handleExistingResource method resource = do
         --TODO: caching preconditions
         entity
@@ -313,4 +313,4 @@ handleExistingResource method resource = do
                 HEAD -> resource ^. existingGet
                         --TODO: early return for HEAD
         --TODO: content negotiation
-        return $ waiResponse (method == HEAD) HTTP.ok200 entity
+        return (HTTP.ok200, entity)

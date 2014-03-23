@@ -1,10 +1,8 @@
 module Http.Entity (
         Entity(),
+        concatResponseHeaders,
         entityFromStrictText, entityFromStrictByteString, entityFromHtml,
         entityFromFile,
-        ExtraHeader(..),
-        unExtraHeader,
-        EntityBody(..),
         waiResponse,
 )
 where
@@ -33,11 +31,11 @@ import qualified Data.Text.Encoding            as T
 import qualified Network.Wai                   as WAI
 
 
-data ExtraHeader = ExtraHeader HTTP.Header
+data ExtraHeader = ExtraHeaders HTTP.ResponseHeaders
 
 unExtraHeader :: ExtraHeader -> HTTP.ResponseHeaders
 unExtraHeader = \case
-        ExtraHeader header -> [header]
+        ExtraHeaders headers -> headers
 
 data Entity = Entity {
         entityExtraHeaders :: [ExtraHeader],
@@ -47,6 +45,11 @@ data Entity = Entity {
 data EntityBody
         = EntityBodyFromFile FilePath (Maybe WAI.FilePart)
         | EntityBodyFromBuilder Z.Builder
+
+concatResponseHeaders :: HTTP.ResponseHeaders -> Entity -> Entity
+concatResponseHeaders new Entity {entityExtraHeaders = old, ..}
+        = Entity {entityExtraHeaders = ExtraHeaders new : old, ..}
+
 
 entityFromStrictText :: ByteString -> Text -> Entity
 entityFromStrictText contentType body
