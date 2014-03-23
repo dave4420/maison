@@ -67,7 +67,10 @@ bsFromAuthority protocol authority
                  else BC.pack $ ':' : show (authority ^. authorityPort))
 
 
-data Uri = Uri Protocol Authority Path Query
+data Uri = Uri {uriProtocol :: Protocol,
+                uriAuthority :: Authority,
+                uriPath :: Path,
+                uriQuery :: Query}
 
 data RelUri
         = AbsUri Uri

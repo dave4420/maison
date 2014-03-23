@@ -174,7 +174,7 @@ parseMethod "GET"  = Just GET
 parseMethod _      = Nothing
 
 
-newtype HttpT m a = HttpT (EitherT UglyStatus (ReaderT WAI.Request m) a)
+newtype HttpT m a = HttpT (EitherT UglyStatus (ReaderT (WAI.Request, Uri) m) a)
     deriving (Functor, Applicative, Monad, X.MonadCatch)
 
 instance MonadTrans HttpT where
@@ -182,15 +182,11 @@ instance MonadTrans HttpT where
 
 data UglyStatus = UglyStatus HTTP.ResponseHeaders HTTP.Status
 
-runHttpT :: Monad m =>
-            HttpT m a ->
-            (UglyStatus -> ReaderT WAI.Request m a) ->
-            WAI.Request ->
-            m a
-runHttpT (HttpT act) ugly = runReaderT (eitherT ugly return act)
-
 asksRequest :: Monad m => (WAI.Request -> a) -> HttpT m a
-asksRequest f = HttpT . lift $ asks f
+asksRequest f = HttpT . lift $ asks (f . fst)
+
+asksUri :: Monad m => (Uri -> a) -> HttpT m a
+asksUri f = HttpT . lift $ asks (f . snd)
 
 oops :: Monad m => HTTP.Status -> HttpT m a
 oops = oops' []
@@ -200,14 +196,14 @@ oops' headers status = HttpT . left $ UglyStatus headers status
 
 type Response = (HTTP.Status, Entity)
 
-defaultUgly :: Monad m => UglyStatus -> ReaderT WAI.Request m Response
+defaultUgly :: UglyStatus -> Response
 defaultUgly (UglyStatus headers status)
-        = return
-          . (,) status
+        = (,) status
           . concatResponseHeaders headers
           . entityFromStrictByteString "text/html; charset=utf-8"
           . HTTP.statusMessage
           $ status
+
 
 data Settings = Settings {
         _settingsSites :: Sites,
@@ -220,43 +216,45 @@ waiApplication :: Protocol -> (Settings -> Settings) -> WAI.Application
 -}
 waiApplication protocol f request
         = uncurry (waiResponse $ method' == Just HEAD)
-          <$> runHttpT (httpMain method' protocol (settings ^. settingsSites)
-                        `X.catch` panic)
-                       defaultUgly
-                       request
+--          <$> runReaderT (eitherT (return . defaultUgly) return ermx) request
+          <$> maybe (return . defaultUgly $ UglyStatus [] HTTP.badRequest400)
+                    (\authority
+                     -> runReaderT (eitherT (return . defaultUgly) return ermx)
+                                   (request, Uri protocol authority path query))
+                    authority'
     where
         settings = f $ Settings mempty (const $ return ())
+        HttpT ermx = httpMain method' (settings ^. settingsSites)
+                     `X.catch` panic
         panic :: IOError -> HttpT IO Response
         panic e = do
                 (settings ^. settingsOnException) e
                 oops HTTP.internalServerError500
         method' = parseMethod . WAI.requestMethod $ request
+        authority' = parseAuthority (protocolPort protocol)
+                     <=< WAI.requestHeaderHost
+                     $ request
+        path = fromMaybe (pure "") . nonEmpty . WAI.pathInfo $ request
+        query = WAI.queryString request
 
 
-httpMain :: Monad m => Maybe Method -> Protocol -> Sites' m -> HttpT m Response
-httpMain method' protocol sites = do
-
-        authority
-         <- maybe (oops HTTP.badRequest400) return
-            . (parseAuthority (protocolPort protocol) =<<)
-            =<< asksRequest WAI.requestHeaderHost
+httpMain :: Monad m => Maybe Method -> Sites' m -> HttpT m Response
+httpMain method' sites = do
 
         site
          <- maybe (oops HTTP.badRequest400) return
-            $ sites ^. QS.atAuthority authority
-
-        path <- asksRequest $ fromMaybe (pure "") . nonEmpty . WAI.pathInfo
-        query <- asksRequest WAI.queryString
-        let uri = Uri protocol authority path query
+            . (sites ^.)
+            =<< asksUri (QS.atAuthority <$> uriAuthority)
 
         resource
          <- handleAuthentication
-            =<< lift (site ^! QS.atPathQuery path query)
+            =<< lift . (site ^!)
+            =<< asksUri (QS.atPathQuery <$> uriPath <*> uriQuery)
 
         method
          <- maybe (oops HTTP.notImplemented501) return method'
 
-        QR.eitherResource (handleMissingResource uri)
+        QR.eitherResource handleMissingResource
                           (handleExistingResource method)
                           resource
 
@@ -282,15 +280,17 @@ handleAuthentication = \case
 
 handleMissingResource
         :: Monad m =>
-           Uri -> MissingResource' m -> HttpT m Response
-handleMissingResource uri resource = do
+           MissingResource' m -> HttpT m Response
+handleMissingResource resource = do
         --TODO: potentially handle PUT
         case resource ^. missingBecause of
                 QR.Moved transience relUri
-                  -> oops' [(HTTP.hLocation, bsFromUri $ uri .+. relUri)]
-                     $ case transience of
-                        QR.Permanently -> HTTP.movedPermanently301
-                        QR.Temporarily -> HTTP.temporaryRedirect307
+                  -> do
+                        absUri <- asksUri (.+. relUri)
+                        oops' [(HTTP.hLocation, bsFromUri absUri)]
+                            $ case transience of
+                                QR.Permanently -> HTTP.movedPermanently301
+                                QR.Temporarily -> HTTP.temporaryRedirect307
                 QR.NotFound why mkEntity
                         --TODO: potentially handle POST
                   -> maybe (oops status)
