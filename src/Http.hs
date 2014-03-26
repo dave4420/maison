@@ -67,6 +67,7 @@ import           Control.Monad.Reader.Class
 import           Data.List.NonEmpty (NonEmpty(..), nonEmpty)
 
 -- transformers
+import           Control.Monad.IO.Class
 import           Control.Monad.Trans.Class
 import           Control.Monad.Trans.Reader
 
@@ -182,7 +183,8 @@ data Request = Request {_requestWaiRequest :: WAI.Request,
 $(L.makeLenses ''Request)
 
 newtype HttpT m a = HttpT (EitherT UglyStatus (ReaderT Request m) a)
-    deriving (Functor, Applicative, Monad, X.MonadCatch, MonadReader Request)
+    deriving (Functor, Applicative, Monad, X.MonadCatch, MonadReader Request,
+              MonadIO)
 
 instance MonadTrans HttpT where
         lift = HttpT . lift . lift
