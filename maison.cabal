@@ -37,6 +37,7 @@ library
                      , exceptions == 0.3.*
                      , http-types
                      , lens == 3.10.*
+                     , mtl
                      , semigroups == 0.12.*
                      , text
                      , transformers

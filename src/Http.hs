@@ -60,6 +60,9 @@ import qualified Network.HTTP.Types            as HTTP
 import qualified Control.Lens                  as L
 import           Control.Lens.Operators
 
+-- mtl
+import           Control.Monad.Reader.Class
+
 -- semigroups
 import           Data.List.NonEmpty (NonEmpty(..), nonEmpty)
 
@@ -174,19 +177,17 @@ parseMethod "GET"  = Just GET
 parseMethod _      = Nothing
 
 
-newtype HttpT m a = HttpT (EitherT UglyStatus (ReaderT (WAI.Request, Uri) m) a)
-    deriving (Functor, Applicative, Monad, X.MonadCatch)
+data Request = Request {_requestWaiRequest :: WAI.Request,
+                        _requestUri :: Uri}
+$(L.makeLenses ''Request)
+
+newtype HttpT m a = HttpT (EitherT UglyStatus (ReaderT Request m) a)
+    deriving (Functor, Applicative, Monad, X.MonadCatch, MonadReader Request)
 
 instance MonadTrans HttpT where
         lift = HttpT . lift . lift
 
 data UglyStatus = UglyStatus HTTP.ResponseHeaders HTTP.Status
-
-asksRequest :: Monad m => (WAI.Request -> a) -> HttpT m a
-asksRequest f = HttpT . lift $ asks (f . fst)
-
-asksUri :: Monad m => (Uri -> a) -> HttpT m a
-asksUri f = HttpT . lift $ asks (f . snd)
 
 oops :: Monad m => HTTP.Status -> HttpT m a
 oops = oops' []
@@ -219,7 +220,8 @@ waiApplication protocol f request
           <$> maybe (return . defaultUgly $ UglyStatus [] HTTP.badRequest400)
                     (\authority
                      -> runReaderT (eitherT (return . defaultUgly) return ermx)
-                                   (request, Uri protocol authority path query))
+                                   (Request request
+                                           (Uri protocol authority path query)))
                     authority'
     where
         settings = f $ Settings mempty (const $ return ())
@@ -243,12 +245,13 @@ httpMain method' sites = do
         site
          <- maybe (oops HTTP.badRequest400) return
             . (sites ^.)
-            =<< asksUri (QS.atAuthority <$> uriAuthority)
+            =<< L.view (requestUri . L.to (QS.atAuthority <$> uriAuthority))
 
         resource
          <- handleAuthentication
             =<< lift . (site ^!)
-            =<< asksUri (QS.atPathQuery <$> uriPath <*> uriQuery)
+            =<< L.view (requestUri
+                        . L.to (QS.atPathQuery <$> uriPath <*> uriQuery))
 
         method
          <- maybe (oops HTTP.notImplemented501) return method'
@@ -265,9 +268,10 @@ handleAuthentication = \case
         QA.AuthRequired challenges _entity -> do
                 result
                  <- maybe (return $ QA.Forbidden Nothing) lift
-                    =<< asksRequest (QA.checkAuthentication challenges
-                                     <=< lookup HTTP.hAuthorization
-                                         . WAI.requestHeaders)
+                    =<< L.view (requestWaiRequest
+                                . L.to (QA.checkAuthentication challenges
+                                        <=< lookup HTTP.hAuthorization
+                                            . WAI.requestHeaders))
                 case result of
                         QA.Forbidden _entity'
                           -> oops' [("WWW-Authenticate",
@@ -285,7 +289,7 @@ handleMissingResource resource = do
         case resource ^. missingBecause of
                 QR.Moved transience relUri
                   -> do
-                        absUri <- asksUri (.+. relUri)
+                        absUri <- L.view $ requestUri . L.to (.+. relUri)
                         oops' [(HTTP.hLocation, bsFromUri absUri)]
                             $ case transience of
                                 QR.Permanently -> HTTP.movedPermanently301
