@@ -20,6 +20,10 @@ module Http (
         MissingBecause, MissingBecause', moved, notFound,
         QR.Transience(..),
         QR.NotFound(..),
+        -- * HttpT
+        HttpT(), HttpIO,
+        Request(),
+        requestUri,
         -- * Etc
         sealSite, sealSiteNoAuth,
         module Http.Entity,
@@ -28,6 +32,7 @@ module Http (
         Settings(), settingsSites, settingsOnException,
         waiApplication,
         NonEmpty(..),
+        module Control.Monad.IO.Class,
         module Control.Monad.Trans.Class,
 )
 where
@@ -76,10 +81,10 @@ import qualified Network.Wai                   as WAI
 
 
 type Site' m = QS.Site (QA.Auth QR.Resource Entity) m
-type Site = Site' IO
+type Site = Site' HttpIO
 
 type Sites' m = QS.Sites (QA.Auth QR.Resource Entity) m
-type Sites = Sites' IO
+type Sites = Sites' HttpIO
 
 singleSite, underSite :: Monad m => ByteString -> Site' m -> Sites' m
 singleSite = QS.singleSite
@@ -91,9 +96,9 @@ singleSitePort = QS.singleSitePort
 underSitePort = QS.underSitePort
 
 
-type Auth = Auth' IO
-type AuthChallenge = AuthChallenge' IO
-type AuthResult = AuthResult' IO
+type Auth = Auth' HttpIO
+type AuthChallenge = AuthChallenge' HttpIO
+type AuthResult = AuthResult' HttpIO
 
 type Auth' m = QA.Auth QR.Resource Entity m
 type AuthChallenge' m = QA.AuthChallenge QR.Resource Entity m
@@ -110,10 +115,10 @@ basicAuth :: Monad m
 basicAuth = QA.basicAuth
 
 
-type Resource = Resource' IO
-type MissingResource = MissingResource' IO
-type ExistingResource = ExistingResource' IO
-type MissingBecause = MissingBecause' IO
+type Resource = Resource' HttpIO
+type MissingResource = MissingResource' HttpIO
+type ExistingResource = ExistingResource' HttpIO
+type MissingBecause = MissingBecause' HttpIO
 
 type Resource' m = QR.Resource Entity m
 type MissingResource' m = QR.MissingResource Entity m
@@ -178,10 +183,6 @@ parseMethod "GET"  = Just GET
 parseMethod _      = Nothing
 
 
-data Request = Request {_requestWaiRequest :: WAI.Request,
-                        _requestUri :: Uri}
-$(L.makeLenses ''Request)
-
 newtype HttpT m a = HttpT (EitherT UglyStatus (ReaderT Request m) a)
     deriving (Functor, Applicative, Monad, X.MonadCatch, MonadReader Request,
               MonadIO)
@@ -189,7 +190,13 @@ newtype HttpT m a = HttpT (EitherT UglyStatus (ReaderT Request m) a)
 instance MonadTrans HttpT where
         lift = HttpT . lift . lift
 
+type HttpIO = HttpT IO
+
 data UglyStatus = UglyStatus HTTP.ResponseHeaders HTTP.Status
+
+data Request = Request {_requestWaiRequest :: WAI.Request,
+                        _requestUri :: Uri}
+$(L.makeLenses ''Request)
 
 oops :: Monad m => HTTP.Status -> HttpT m a
 oops = oops' []
@@ -241,7 +248,7 @@ waiApplication protocol f request
         query = WAI.queryString request
 
 
-httpMain :: Monad m => Maybe Method -> Sites' m -> HttpT m Response
+httpMain :: Monad m => Maybe Method -> Sites' (HttpT m) -> HttpT m Response
 httpMain method' sites = do
 
         site
@@ -251,7 +258,7 @@ httpMain method' sites = do
 
         resource
          <- handleAuthentication
-            =<< lift . (site ^!)
+            =<< (site ^!)
             =<< L.view (requestUri
                         . L.to (QS.atPathQuery <$> uriPath <*> uriQuery))
 
@@ -263,17 +270,18 @@ httpMain method' sites = do
                           resource
 
 
-handleAuthentication :: Monad m => Auth' m -> HttpT m (Resource' m)
+handleAuthentication
+        :: Monad m => Auth' (HttpT m) -> HttpT m (Resource' (HttpT m))
 handleAuthentication = \case
         QA.NoAuth (QA.Forbidden _entity)   -> oops HTTP.forbidden403
         QA.NoAuth (QA.OK resource)         -> return resource
         QA.AuthRequired challenges _entity -> do
                 result
-                 <- maybe (return $ QA.Forbidden Nothing) lift
-                    =<< L.view (requestWaiRequest
-                                . L.to (QA.checkAuthentication challenges
-                                        <=< lookup HTTP.hAuthorization
-                                            . WAI.requestHeaders))
+                 <- fromMaybe (return $ QA.Forbidden Nothing)
+                    . (QA.checkAuthentication challenges
+                       <=< lookup HTTP.hAuthorization
+                           . WAI.requestHeaders)
+                    =<< L.view requestWaiRequest
                 case result of
                         QA.Forbidden _entity'
                           -> oops' [("WWW-Authenticate",
@@ -285,7 +293,7 @@ handleAuthentication = \case
 
 handleMissingResource
         :: Monad m =>
-           MissingResource' m -> HttpT m Response
+           MissingResource' (HttpT m) -> HttpT m Response
 handleMissingResource resource = do
         --TODO: potentially handle PUT
         case resource ^. missingBecause of
@@ -299,7 +307,7 @@ handleMissingResource resource = do
                 QR.NotFound why mkEntity
                         --TODO: potentially handle POST
                   -> maybe (oops status)
-                           (liftM ((,) status) . lift)
+                           (liftM ((,) status))
                            mkEntity
                   where
                         status = case why of
@@ -308,11 +316,11 @@ handleMissingResource resource = do
 
 
 handleExistingResource
-        :: Monad m => Method -> ExistingResource' m -> HttpT m Response
+        :: Monad m => Method -> ExistingResource' (HttpT m) -> HttpT m Response
 handleExistingResource method resource = do
         --TODO: caching preconditions
         entity
-         <- maybe (oops HTTP.methodNotAllowed405) lift $ case method of
+         <- fromMaybe (oops HTTP.methodNotAllowed405) $ case method of
                 GET -> resource ^. existingGet
                        --TODO: range requests
                 HEAD -> resource ^. existingGet

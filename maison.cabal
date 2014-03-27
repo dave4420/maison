@@ -63,6 +63,7 @@ executable maison
                      , bytestring
                      , containers
                      , directory
+                     , exceptions
                      , filepath
                      , hledger-lib
                      , hslogger == 1.2.*

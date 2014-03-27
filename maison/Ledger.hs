@@ -46,8 +46,8 @@ ledgerSite title nf
         = sealSiteNoAuth $ ledgerFileResource (pure title) nf . SG.toList
 
 ledgerFileResource
-        :: NonEmpty Text -> FilePath -> [Text] -> Query -> IO Resource
-ledgerFileResource titles nf path query = case path of
+        :: NonEmpty Text -> FilePath -> [Text] -> Query -> HttpIO Resource
+ledgerFileResource titles nf path query = liftIO $ case path of
         []            -> goInside
         [""]          -> go Nothing
         [accountName] -> go (Just accountName)
@@ -96,8 +96,8 @@ breadcrumbsFromTitles' titles
                               : iterate ("../" <>) "../"
 
 
-balances :: Breadcrumbs -> LEDGER.Journal -> IO Entity
-balances breadcrumbs journal = do
+balances :: Breadcrumbs -> LEDGER.Journal -> HttpIO Entity
+balances breadcrumbs journal = liftIO $ do
         today <- localDay . zonedTimeToLocalTime <$> getZonedTime
         return . entityFromPage breadcrumbs $ table today
      where
@@ -137,8 +137,8 @@ balances breadcrumbs journal = do
                 (balance, tag) = formatAmountWithTag amount
 
 
-transactions :: Breadcrumbs -> LEDGER.Journal -> String -> IO Entity
-transactions breadcrumbs journal acName = do
+transactions :: Breadcrumbs -> LEDGER.Journal -> String -> HttpIO Entity
+transactions breadcrumbs journal acName = liftIO $ do
         today <- localDay . zonedTimeToLocalTime <$> getZonedTime
         return . entityFromPage breadcrumbs $ table today
     where

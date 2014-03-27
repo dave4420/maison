@@ -6,7 +6,6 @@ import           Page
 -- base
 import           Control.Applicative
 import           Control.Arrow
-import           Control.Exception
 import           Control.Monad
 import           Data.Char
 import           Data.Either
@@ -32,6 +31,9 @@ import qualified Data.Map                    as M
 -- directory
 import           System.Directory (getDirectoryContents)
 
+-- exceptions
+import qualified Control.Monad.Catch           as X
+
 -- filepath
 import           System.FilePath ((</>), takeExtension)
 
@@ -53,8 +55,8 @@ import qualified Data.Text.Encoding          as T
 import           System.Posix.Files (getFileStatus, isDirectory, isRegularFile)
 
 
-tryIOException :: IO a -> IO (Either IOException a)
-tryIOException = try
+tryIOException :: X.MonadCatch m => m a -> m (Either IOError a)
+tryIOException = X.try
 
 fileTreeSite :: Text -> FilePath -> Site
 fileTreeSite title' nd = sealSiteNoAuth $ \path query
@@ -68,12 +70,12 @@ multiUserFileTreeSite title' usernames = sealSite $ \path query
            checkPassword username password
                --TODO: plug into PAM instead
                | T.encodeUtf8 user == username
-                           = do
+                           = liftIO $ do
                    let nf = (</> ".password") <$> M.lookup user home
                    pw <- maybe (return Nothing)
                                (liftM (fmap (BC.takeWhile (>= ' '))
                                        . hushSomeException)
-                                . try . B.readFile)
+                                . X.try . B.readFile)
                                nf
                    return $ Just password ==  pw
                | otherwise = return False
@@ -102,7 +104,7 @@ multiUserFileTreeSite title' usernames = sealSite $ \path query
 
 
 fetchResource
-        :: NonEmpty Text -> FilePath -> [Text] -> Query -> IO Resource
+        :: NonEmpty Text -> FilePath -> [Text] -> Query -> HttpIO Resource
 fetchResource titles nd path query = case path of
         [] -> return . missingResource
               $ missingBecause
@@ -110,7 +112,7 @@ fetchResource titles nd path query = case path of
                          (RelPathUri 0 (SG.head titles :| [""]) query)
         [""] -> return $ directoryResource titles nd
         pathHead : pathTail
-          -> tryIOException (getFileStatus nf) >>= \case
+          -> tryIOException (liftIO $ getFileStatus nf) >>= \case
                 Left _ -> return $ missingResource id
                 Right inode
                     | isDirectory inode
@@ -125,14 +127,14 @@ fetchResource titles nd path query = case path of
 
 directoryResource :: NonEmpty Text -> FilePath -> Resource
 directoryResource titles nd = existingResource $ existingGet .~ Just toGet where
-        toGet :: IO Entity
+        toGet :: HttpIO Entity
         toGet = directoryEntity titles
                 . (sort *** sort)
                 . partitionEithers
                 . map (T.pack +++ T.pack)
                 . catMaybes
-                <$> (mapM annotate . filter (not . isPrefixOf ".")
-                     =<< getDirectoryContents nd)
+                <$> liftIO (mapM annotate . filter (not . isPrefixOf ".")
+                            =<< getDirectoryContents nd)
         annotate :: FilePath -> IO (Maybe (Either FilePath FilePath))
         annotate nf = tryIOException (getFileStatus $ nd </> nf)
                       >>= return . \case
@@ -154,7 +156,7 @@ directoryEntity titles (nds, nfs)
 
 
 type ResourceHandler
-        = NonEmpty Text -> FilePath -> [Text] -> Query -> IO Resource
+        = NonEmpty Text -> FilePath -> [Text] -> Query -> HttpIO Resource
 
 fileResource :: ResourceHandler
 fileResource titles nf = M.findWithDefault textFileResource
@@ -181,7 +183,7 @@ textFileResource titles nf [] _query = return . existingResource
         $ existingGet .~ Just get
     where
         get = do
-                bs <- B.readFile nf
+                bs <- liftIO $ B.readFile nf
                 let t = T.decodeUtf8 bs
                 return
                     . entityFromPage (breadcrumbsFromTitles' titles)
@@ -208,5 +210,5 @@ breadcrumbsFromTitles' titles
         hrefs = map toValue $ SG.head titles : "./" : iterate ("../" <>) "../"
 
 
-hushSomeException :: Either SomeException a -> Maybe a
+hushSomeException :: Either X.SomeException a -> Maybe a
 hushSomeException = const Nothing ||| Just
