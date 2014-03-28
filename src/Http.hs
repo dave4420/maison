@@ -254,13 +254,15 @@ httpMain method' sites = do
         site
          <- maybe (oops HTTP.badRequest400) return
             . (sites ^.)
-            =<< L.view (requestUri . L.to (QS.atAuthority <$> uriAuthority))
+            =<< L.view (requestUri
+                        . L.to (QS.atAuthority <$> L.view uriAuthority))
 
         resource
          <- handleAuthentication
             =<< (site ^!)
             =<< L.view (requestUri
-                        . L.to (QS.atPathQuery <$> uriPath <*> uriQuery))
+                        . L.to (QS.atPathQuery <$> L.view uriPath
+                                               <*> L.view uriQuery))
 
         method
          <- maybe (oops HTTP.notImplemented501) return method'

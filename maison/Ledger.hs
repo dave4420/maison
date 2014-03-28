@@ -56,7 +56,8 @@ ledgerFileResource titles nf path query = liftIO $ case path of
         goInside = return . missingResource
                    $ missingBecause
                      .~ moved Permanently
-                              (RelPathUri 0 (SG.head titles :| [""]) query)
+                              (RelUri (RelPath 1 $ SG.head titles :| [""])
+                                      query)
         go sub = do
                 journal
                  <- either fail return

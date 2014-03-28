@@ -1,7 +1,8 @@
 module Http.Uri (
-        Uri(..),
+        Uri(..), uriProtocol, uriAuthority, uriPath, uriQuery,
         bsFromUri,
         RelUri(..),
+        RelUriPart(..),
         (.+.),
         Protocol(..),
         protocolPort,
@@ -37,6 +38,7 @@ import           Control.Lens.Operators
 -- semigroups
 import           Data.List.NonEmpty (NonEmpty(..))
 import qualified Data.List.NonEmpty            as SG
+import qualified Data.Semigroup                as SG
 
 -- text
 import           Data.Text (Text)
@@ -67,37 +69,50 @@ bsFromAuthority protocol authority
                  else BC.pack $ ':' : show (authority ^. authorityPort))
 
 
-data Uri = Uri {uriProtocol :: Protocol,
-                uriAuthority :: Authority,
-                uriPath :: Path,
-                uriQuery :: Query}
-
-data RelUri
-        = AbsUri Uri
-        | RelProtocolUri Authority Path Query
-        | RelHostUri Path Query
-        | RelPathUri Int Path Query
-        | SameUri
-
 type Path = NonEmpty Text
 
 data Protocol = Http | Https
 
-(.+.) :: Uri -> RelUri -> Uri
-_  .+. AbsUri uri = uri
-Uri protocol _ _ _ .+. RelProtocolUri host path query
-        = Uri protocol host path query
-Uri protocol host _ _ .+. RelHostUri path query = Uri protocol host path query
-Uri protocol host path _ .+. RelPathUri up path' query
-        = Uri protocol host (SG.fromList newPath) query
-    where
-        newPath = reverse (drop up . SG.tail . SG.reverse $ path)
-                  ++ SG.toList path'
-uri .+. SameUri = uri
-
 protocolPort :: Protocol -> Int
 protocolPort Http = 80
 protocolPort Https = 443
+
+
+-- URI spec is <http://tools.ietf.org/html/rfc3986>
+data Uri = Uri {_uriProtocol :: Protocol,
+                _uriAuthority :: Authority,
+                _uriPath :: Path,
+                _uriQuery :: Query}
+$(L.makeLenses ''Uri)
+
+data RelUri
+        = AbsUri Uri
+        | RelUri RelUriPart Query
+        | SameUri
+
+data RelUriPart
+        = AbsAuthority Authority Path
+        | AbsPath Path
+        | RelPath Int Path      -- number of segments to drop, >= 1
+        | EmptyPath
+
+(.+.) :: Uri -> RelUri -> Uri
+_   .+. AbsUri uri = uri
+uri .+. RelUri part query = f . (uriQuery .~ query) $ uri where
+        f = case part of
+                AbsAuthority authority path
+                 -> (uriAuthority .~ authority) . (uriPath .~ path)
+                AbsPath path
+                 -> uriPath .~ path
+                RelPath depth path
+                 -> uriPath %~ (maybe path (SG.<> path)
+                                . SG.nonEmpty
+                                . reverse
+                                . SG.drop depth
+                                . SG.reverse)
+                EmptyPath
+                 -> id
+uri .+. SameUri = uri
 
 bsFromUri :: Uri -> ByteString
 bsFromUri (Uri protocol authority path query) = mconcat [

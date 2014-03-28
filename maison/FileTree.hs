@@ -109,7 +109,7 @@ fetchResource titles nd path query = case path of
         [] -> return . missingResource
               $ missingBecause
                 .~ moved Permanently
-                         (RelPathUri 0 (SG.head titles :| [""]) query)
+                         (RelUri (RelPath 1 $ SG.head titles :| [""]) query)
         [""] -> return $ directoryResource titles nd
         pathHead : pathTail
           -> tryIOException (liftIO $ getFileStatus nf) >>= \case
