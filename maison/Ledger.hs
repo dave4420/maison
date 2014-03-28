@@ -32,6 +32,7 @@ import           System.Locale
 
 -- semigroups
 import qualified Data.List.NonEmpty          as SG
+import qualified Data.Semigroup              as SG
 
 -- text
 import           Data.Text (Text)
@@ -47,18 +48,19 @@ ledgerSite title nf
 
 ledgerFileResource
         :: NonEmpty Text -> FilePath -> [Text] -> Query -> HttpIO Resource
-ledgerFileResource titles nf path query = liftIO $ case path of
+ledgerFileResource titles nf path _query = case path of
         []            -> goInside
         [""]          -> go Nothing
         [accountName] -> go (Just accountName)
         _             -> return $ missingResource id
     where
-        goInside = return . missingResource
-                   $ missingBecause
-                     .~ moved Permanently
-                              (RelUri (RelPath 1 $ SG.head titles :| [""])
-                                      query)
-        go sub = do
+        goInside = do
+                uri <- L.view requestUri
+                return . missingResource
+                    $ missingBecause
+                      .~ moved Permanently
+                               (AbsUri . (uriPath %~ (SG.<> pure "")) $ uri)
+        go sub = liftIO $ do
                 journal
                  <- either fail return
                     =<< LEDGER.readJournalFile Nothing Nothing nf

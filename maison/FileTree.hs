@@ -38,6 +38,7 @@ import qualified Control.Monad.Catch           as X
 import           System.FilePath ((</>), takeExtension)
 
 -- lens
+import qualified Control.Lens                as L
 import           Control.Lens.Operators
 
 -- maison
@@ -45,6 +46,7 @@ import           Http
 
 -- semigroups
 import qualified Data.List.NonEmpty          as SG
+import qualified Data.Semigroup              as SG
 
 -- text
 import           Data.Text (Text)
@@ -106,10 +108,12 @@ multiUserFileTreeSite title' usernames = sealSite $ \path query
 fetchResource
         :: NonEmpty Text -> FilePath -> [Text] -> Query -> HttpIO Resource
 fetchResource titles nd path query = case path of
-        [] -> return . missingResource
-              $ missingBecause
-                .~ moved Permanently
-                         (RelUri (RelPath 1 $ SG.head titles :| [""]) query)
+        [] -> do
+                uri <- L.view requestUri
+                return . missingResource
+                    $ missingBecause
+                      .~ moved Permanently
+                               (AbsUri . (uriPath %~ (SG.<> pure "")) $ uri)
         [""] -> return $ directoryResource titles nd
         pathHead : pathTail
           -> tryIOException (liftIO $ getFileStatus nf) >>= \case
