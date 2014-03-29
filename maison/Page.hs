@@ -1,4 +1,4 @@
-module Page (Breadcrumbs, entityFromPage) where
+module Page (Breadcrumbs, entityFromPage, breadcrumbsFromTitles) where
 
 -- base
 import           Data.List
@@ -9,8 +9,18 @@ import           Text.Blaze.Html
 import qualified Text.Blaze.Html5            as HT
 import qualified Text.Blaze.Html5.Attributes as AT
 
+-- lens
+import qualified Control.Lens                as L
+
 -- maison
 import           Http
+
+-- semigroups
+import qualified Data.List.NonEmpty          as SG
+
+-- text
+import           Data.Text (Text)
+import qualified Data.Text              as T
 
 
 -- | First element is our current location, last is the root.
@@ -42,3 +52,13 @@ entityFromPage breadcrumbs body
         = entityFromHtml
           $ html5Page (title breadcrumbs)
             $ nav breadcrumbs <> body
+
+
+breadcrumbsFromTitles :: Monad m => NonEmpty Text -> HttpT m Breadcrumbs
+breadcrumbsFromTitles titles = do
+        isIndex <- L.view $ requestUri . uriPath . L.to (T.null . SG.last)
+        let hrefs' = iterate ("../" <>) "../" :: [Text]
+            hrefs | isIndex   = "" : hrefs'
+                  | otherwise = "" : "./" : hrefs'
+        return . zipWith (flip (,)) (map toValue hrefs) . map toHtml . SG.toList
+            $ titles

@@ -92,11 +92,14 @@ multiUserFileTreeSite title' usernames = sealSite $ \path query
     where
         home = M.fromList . map (\user -> (user, "/home/" ++ T.unpack user))
                $ usernames
-        rootResource = existingResource $ existingGet ?~ return entity where
-                entity = entityFromPage (breadcrumbsFromTitles $ pure title')
-                         . HT.ul
-                         . F.foldMap f
-                         $ M.keys home
+        rootResource = existingResource $ existingGet ?~ entity where
+                entity = do
+                        breadcrumbs <- breadcrumbsFromTitles $ pure title'
+                        return
+                            . entityFromPage breadcrumbs
+                            . HT.ul
+                            . F.foldMap f
+                            $ M.keys home
                 f n = HT.li $ mconcat [pub, " ", priv] where
                         pub = HT.a ! AT.href (HT.toValue n <> "/vc.ln/pub/")
                               $ toHtml n
@@ -130,14 +133,14 @@ fetchResource titles nd path query = case path of
                 titles' = SG.cons pathHead titles
 
 directoryResource :: NonEmpty Text -> FilePath -> Resource
-directoryResource titles nd = existingResource $ existingGet .~ Just toGet where
+directoryResource titles nd = existingResource $ existingGet ?~ toGet where
         toGet :: HttpIO Entity
         toGet = directoryEntity titles
                 . (sort *** sort)
                 . partitionEithers
                 . map (T.pack +++ T.pack)
                 . catMaybes
-                <$> liftIO (mapM annotate . filter (not . isPrefixOf ".")
+                =<< liftIO (mapM annotate . filter (not . isPrefixOf ".")
                             =<< getDirectoryContents nd)
         annotate :: FilePath -> IO (Maybe (Either FilePath FilePath))
         annotate nf = tryIOException (getFileStatus $ nd </> nf)
@@ -148,10 +151,12 @@ directoryResource titles nd = existingResource $ existingGet .~ Just toGet where
                     | isRegularFile inode -> Just $ Right nf
                     | otherwise           -> Nothing
 
-directoryEntity :: NonEmpty Text -> ([Text], [Text]) -> Entity
-directoryEntity titles (nds, nfs)
-        = entityFromPage (breadcrumbsFromTitles titles)
-          $ HT.ul $ F.foldMap htDir nds <> F.foldMap htFile nfs
+directoryEntity
+        :: Monad m => NonEmpty Text -> ([Text], [Text]) -> HttpT m Entity
+directoryEntity titles (nds, nfs) = do
+        breadcrumbs <- breadcrumbsFromTitles titles
+        return . entityFromPage breadcrumbs
+            $ HT.ul $ F.foldMap htDir nds <> F.foldMap htFile nfs
     where
         htDir, htFile :: Text -> Html
         htDir nd = HT.li $ HT.a ! AT.href (HT.toValue nd <> "/")
@@ -189,8 +194,9 @@ textFileResource titles nf [] _query = return . existingResource
         get = do
                 bs <- liftIO $ B.readFile nf
                 let t = T.decodeUtf8 bs
+                breadcrumbs <- breadcrumbsFromTitles titles
                 return
-                    . entityFromPage (breadcrumbsFromTitles' titles)
+                    . entityFromPage breadcrumbs
                     $ HT.pre (toHtml t)
 textFileResource _titles _nf _path _query = return . missingResource $ id
 
@@ -201,17 +207,6 @@ binaryFileResource mimeType _titles nf [] _query
         get = return $ entityFromFile mimeType nf
 binaryFileResource _mimeType _titles _nf _path _query
         = return . missingResource $ id
-
-
-breadcrumbsFromTitles :: NonEmpty Text -> Breadcrumbs   -- for directory
-breadcrumbsFromTitles = zipWith (flip (,)) hrefs . map toHtml . F.toList where
-        hrefs = map toValue $ ("./" :: Text) : iterate ("../" <>) "../"
-
-breadcrumbsFromTitles' :: NonEmpty Text -> Breadcrumbs  -- for file
-breadcrumbsFromTitles' titles
-        = zipWith (flip (,)) hrefs . map toHtml . F.toList $ titles
-    where
-        hrefs = map toValue $ SG.head titles : "./" : iterate ("../" <>) "../"
 
 
 hushSomeException :: Either X.SomeException a -> Maybe a

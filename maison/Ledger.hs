@@ -60,43 +60,29 @@ ledgerFileResource titles nf path _query = case path of
                     $ missingBecause
                       .~ moved Permanently
                                (AbsUri . (uriPath %~ (SG.<> pure "")) $ uri)
-        go sub = liftIO $ do
+        go sub = do
                 journal
                  <- either fail return
-                    =<< LEDGER.readJournalFile Nothing Nothing nf
+                    =<< liftIO (LEDGER.readJournalFile Nothing Nothing nf)
                 let ledger = LEDGER.ledgerFromJournal
                              (LEDGER.Empty True)
                              journal
-                return $ case sub of
+                case sub of
                         Nothing -> goJournal journal
-                        Just ac -> maybe (missingResource id)
+                        Just ac -> maybe (return $ missingResource id)
                                          (goAccount journal acName)
                                          (LEDGER.ledgerAccount ledger acName)
                             where
                                 acName = T.unpack ac
-        goJournal journal = existingResource $ existingGet .~ Just balances'
-            where
-                balances' = balances breadcrumbs journal
-        goAccount journal acName _ac
-                = existingResource $ existingGet .~ Just transactions'
-            where
-                transactions' = transactions breadcrumbs' journal acName
-                breadcrumbs' = breadcrumbsFromTitles'
-                               $ (T.pack acName) SG.<| titles
-        breadcrumbs = breadcrumbsFromTitles titles
-
-
-breadcrumbsFromTitles :: NonEmpty Text -> Breadcrumbs
-breadcrumbsFromTitles = zipWith (flip (,)) hrefs . map toHtml . F.toList where
-        hrefs = map toValue $ ("./" :: Text) : iterate ("../" <>) "../"
-
-breadcrumbsFromTitles' :: NonEmpty Text -> Breadcrumbs  -- for file
-breadcrumbsFromTitles' titles
-        = zipWith (flip (,)) hrefs . map toHtml . F.toList $ titles
-    where
-        hrefs = map toValue $ "./" <> SG.head titles
-                              : "./"
-                              : iterate ("../" <>) "../"
+        goJournal journal = do
+                breadcrumbs <- breadcrumbsFromTitles titles
+                return . existingResource
+                    $ existingGet ?~ balances breadcrumbs journal
+        goAccount journal acName _ac = do
+                breadcrumbs
+                 <- breadcrumbsFromTitles $ (T.pack acName) SG.<| titles
+                return . existingResource
+                    $ existingGet ?~ transactions breadcrumbs journal acName
 
 
 balances :: Breadcrumbs -> LEDGER.Journal -> HttpIO Entity
