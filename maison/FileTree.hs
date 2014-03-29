@@ -23,6 +23,11 @@ import qualified Text.Blaze.Html5.Attributes as AT
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString             as B
 import qualified Data.ByteString.Char8       as BC
+import qualified Data.ByteString.Lazy        as BL
+
+-- conduit
+import           Data.Conduit
+import           Data.Conduit.List (consume)
 
 -- containers
 import           Data.Map (Map)
@@ -46,6 +51,9 @@ import           Http
 
 -- pandoc
 import qualified Text.Pandoc                 as PANDOC
+
+-- process-conduit
+import           Data.Conduit.Process
 
 -- semigroups
 import qualified Data.List.NonEmpty          as SG
@@ -192,16 +200,35 @@ extensionHandlers = M.fromList . concat $ [
         keys >< value = flip (,) value . ('.' :) <$> keys
 
 textFileResource :: ResourceHandler
-textFileResource titles nf [] _query = return . existingResource
-        $ existingGet .~ Just get
+textFileResource titles nf [] query = return . existingResource
+        $ existingGet ?~ (case join $ lookup "as" query of
+                Just "pdf" -> getPdf
+                _          -> getPage)
     where
-        get = do
+        getPage = do
                 bs <- liftIO $ B.readFile nf
                 let t = T.decodeUtf8 bs
                 breadcrumbs <- breadcrumbsFromTitles titles
                 return
                     . entityFromPage breadcrumbs
                     $ HT.pre (toHtml t)
+        getPdf = do
+                bs <- liftIO $ B.readFile nf
+                fmap (entityFromLazyByteString "application/pdf"
+                      . BL.fromChunks)
+                    . liftIO
+                    . runResourceT
+                    $ yield bs
+                      $= conduitProcess (proc "a2ps"
+                                         ["--columns=2", "--rows=1",
+                                          "--chars-per-line=132",
+                                          "--tabsize=8", "--borders=no",
+                                          "--line-numbers=10", "--no-header",
+                                          "--header=" ++ nf,
+                                          "--pretty-print=plain", "--output=-"])
+                      =$= conduitProcess (proc "ps2pdf"
+                                          ["-sPAPERSIZE=a4", "-", "-"])
+                      $$ consume
 textFileResource _titles _nf _path _query = return . missingResource $ id
 
 binaryFileResource :: ByteString -> ResourceHandler

@@ -32,6 +32,7 @@ library
                      , blaze-builder
                      , blaze-html == 0.7.*
                      , bytestring
+                     , conduit == 1.0.*
                      , containers
                      , errors == 1.4.*
                      , exceptions == 0.3.*
@@ -61,6 +62,7 @@ executable maison
                      , base
                      , blaze-html
                      , bytestring
+                     , conduit
                      , containers
                      , directory
                      , exceptions
@@ -70,6 +72,7 @@ executable maison
                      , lens
                      , old-locale
                      , pandoc == 1.12.*
+                     , process-conduit
                      , semigroups
                      , text == 1.0.*
                      , time

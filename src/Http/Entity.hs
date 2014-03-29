@@ -1,7 +1,11 @@
 module Http.Entity (
         Entity(),
         concatResponseHeaders,
-        entityFromStrictText, entityFromStrictByteString, entityFromHtml,
+        entityFromStrictText, entityFromStrictByteString,
+        entityFromLazyByteString,
+        entityFromHtml,
+        entityFromSourceFlushBuilder, entityFromSourceBuilder,
+        entityFromSourceByteString,
         entityFromFile,
         waiResponse,
 )
@@ -19,6 +23,10 @@ import qualified Text.Blaze.Html.Renderer.Utf8 as ZH
 
 -- bytestring
 import           Data.ByteString (ByteString)
+import qualified Data.ByteString.Lazy          as BL
+
+-- conduit
+import           Data.Conduit
 
 -- http-types
 import qualified Network.HTTP.Types            as HTTP
@@ -45,6 +53,7 @@ data Entity = Entity {
 data EntityBody
         = EntityBodyFromFile FilePath (Maybe WAI.FilePart)
         | EntityBodyFromBuilder Z.Builder
+        | EntityBodyFromSource (Source IO (Flush Z.Builder))
 
 concatResponseHeaders :: HTTP.ResponseHeaders -> Entity -> Entity
 concatResponseHeaders new Entity {entityExtraHeaders = old, ..}
@@ -61,11 +70,30 @@ entityFromStrictByteString entityType body = Entity{..} where
         entityExtraHeaders = []
         entityBody = EntityBodyFromBuilder (Z.fromByteString body)
 
+entityFromLazyByteString :: ByteString -> BL.ByteString -> Entity
+entityFromLazyByteString entityType body = Entity{..} where
+        entityExtraHeaders = []
+        entityBody = EntityBodyFromBuilder (Z.fromLazyByteString body)
+
 entityFromHtml :: ZH.Html -> Entity
 entityFromHtml html = Entity{..} where
         entityExtraHeaders = []
         entityType = "text/html; charset=utf-8"
         entityBody = EntityBodyFromBuilder (ZH.renderHtmlBuilder html)
+
+entityFromSourceFlushBuilder
+        :: ByteString -> Source IO (Flush Z.Builder) -> Entity
+entityFromSourceFlushBuilder entityType body = Entity{..} where
+        entityExtraHeaders = []
+        entityBody = EntityBodyFromSource body
+
+entityFromSourceBuilder :: ByteString -> Source IO Z.Builder -> Entity
+entityFromSourceBuilder contentType
+        = entityFromSourceFlushBuilder contentType . mapOutput Chunk
+
+entityFromSourceByteString :: ByteString -> Source IO ByteString -> Entity
+entityFromSourceByteString contentType
+        = entityFromSourceBuilder contentType . mapOutput Z.fromByteString
 
 entityFromFile :: ByteString -> FilePath -> Entity
 entityFromFile entityType nf = Entity{..} where
@@ -81,6 +109,8 @@ waiResponse omitBody status Entity{..}
                  -> WAI.responseFile status headers nf part
                 EntityBodyFromBuilder builder
                  -> WAI.responseBuilder status headers builder
+                EntityBodyFromSource source
+                 -> WAI.responseSource status headers source
     where
         headers = concatMap unExtraHeader entityExtraHeaders
                   ++ [(HTTP.hContentType, entityType)]
