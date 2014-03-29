@@ -69,6 +69,7 @@ executable maison
                      , hslogger == 1.2.*
                      , lens
                      , old-locale
+                     , pandoc == 1.12.*
                      , semigroups
                      , text == 1.0.*
                      , time

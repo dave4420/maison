@@ -44,6 +44,9 @@ import           Control.Lens.Operators
 -- maison
 import           Http
 
+-- pandoc
+import qualified Text.Pandoc                 as PANDOC
+
 -- semigroups
 import qualified Data.List.NonEmpty          as SG
 import qualified Data.Semigroup              as SG
@@ -177,6 +180,7 @@ fileResource titles nf = M.findWithDefault textFileResource
 extensionHandlers :: Map String ResourceHandler
 extensionHandlers = M.fromList . concat $ [
         ["journal"] >< ledgerFileResource,
+        ["markdown"] >< markdownFileResource,
         ["html", "htm"] >< binaryFileResource "text/html; charset=utf-8",
         ["css"] >< binaryFileResource "text/css; charset=utf-8",
         ["js"] >< binaryFileResource "text/javascript; charset=utf-8",
@@ -206,6 +210,23 @@ binaryFileResource mimeType _titles nf [] _query
     where
         get = return $ entityFromFile mimeType nf
 binaryFileResource _mimeType _titles _nf _path _query
+        = return . missingResource $ id
+
+markdownFileResource :: ResourceHandler
+markdownFileResource titles nf [] _query
+        = return . existingResource $ existingGet ?~ get
+    where
+        get = do
+                bs <- liftIO $ B.readFile nf
+                breadcrumbs <- breadcrumbsFromTitles titles
+                return
+                    . entityFromPage breadcrumbs
+                    . PANDOC.writeHtml PANDOC.def
+                    . PANDOC.readMarkdown PANDOC.def {PANDOC.readerSmart = True}
+                    . T.unpack
+                    . T.decodeUtf8
+                    $ bs
+markdownFileResource _titles _nf _path _query
         = return . missingResource $ id
 
 
