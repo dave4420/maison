@@ -194,10 +194,11 @@ formFromPts pts = HT.form $ mconcat [
                            ! AT.name name
                            ! AT.value (show' $ pts ^. value)
         option (value, constant, text)
-                = HT.option
-                  ! AT.value value
-                  ! AT.selected (toValue $ pts ^. ptsOrientation == constant)
-                  $ text
+                = (if pts ^. ptsOrientation == constant
+                      then (! AT.selected "selected")
+                      else id)
+                  (HT.option ! AT.value value)
+                  text
 
 htStats :: Statistics -> Html
 htStats st = HT.ul . F.foldMap HT.li . catMaybes $ [
