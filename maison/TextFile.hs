@@ -6,10 +6,13 @@ import           Page
 import           Control.Monad
 import           Data.Char
 import           Data.List
+import           Data.Monoid
+import           Data.String
 
 -- blaze-html
 import           Text.Blaze.Html
 import qualified Text.Blaze.Html5            as HT
+import qualified Text.Blaze.Html5.Attributes as AT
 
 -- bytestring
 import           Data.ByteString (ByteString)
@@ -77,7 +80,7 @@ textFileResource titles nf [] query = return . existingResource
                 breadcrumbs <- breadcrumbsFromTitles titles
                 return
                     . entityFromPage breadcrumbs
-                    $ HT.pre (toHtml t)
+                    $ formFromPts pts <> HT.pre (toHtml t)
 
         getPdf bs = do
                 fmap (entityFromLazyByteString "application/pdf"
@@ -85,9 +88,11 @@ textFileResource titles nf [] query = return . existingResource
                     . liftIO
                     . runResourceT
                     $ yield bs
-                      $= conduitProcess (a2ps . lookupPtsDef $ defPts nf)
+                      $= conduitProcess (a2ps pts)
                       =$= conduitProcess ps2pdf
                       $$ consume
+
+        pts = lookupPtsDef $ defPts nf
 
         lookupBS :: ByteString -> Maybe ByteString
         lookupBS key = join $ lookup key query
@@ -114,3 +119,22 @@ textFileResource titles nf [] query = return . existingResource
                   . maybe id (ptsCharsPerLine .~) (lookupPos "chars-per-line")
 
 textFileResource _titles _nf _path _query = return . missingResource $ id
+
+
+formFromPts :: PdfTextSettings -> Html
+formFromPts pts
+        = HT.form ! AT.target "?as=pdf"
+          $ mconcat [
+                HT.input ! AT.type_ "hidden" ! AT.name "as" ! AT.value "pdf",
+                "Columns ",
+                inputText 3 "columns" ptsColumns,
+                " Chars per line ",
+                inputText 5 "chars-per-line" ptsCharsPerLine,
+                " ",
+                HT.input ! AT.type_ "submit" ! AT.value "PDF"]
+    where
+        inputText size name value
+                = HT.input ! AT.size (show' size)
+                           ! AT.name name
+                           ! AT.value (show' $ pts ^. value)
+        show' = fromString . show
