@@ -164,20 +164,18 @@ show' :: (Show a, IsString b) => a -> b
 show' = fromString . show
 
 formFromPts :: PdfTextSettings -> Html
-formFromPts pts
-        = HT.form ! AT.target "?as=pdf"
-          $ mconcat [
-                HT.input ! AT.type_ "hidden" ! AT.name "as" ! AT.value "pdf",
-                "Columns ",
-                inputText 3 "columns" ptsColumns,
-                " Chars per line ",
-                inputText 5 "chars-per-line" ptsCharsPerLine,
-                " ",
-                HT.select ! AT.name "orientation"
-                $ F.foldMap option [("portrait", Portrait, "Portrait"),
-                                    ("landscape", Landscape, "Landscape")],
-                " ",
-                HT.input ! AT.type_ "submit" ! AT.value "PDF"]
+formFromPts pts = HT.form $ mconcat [
+        HT.input ! AT.type_ "hidden" ! AT.name "as" ! AT.value "pdf",
+        "Columns ",
+        inputText 3 "columns" ptsColumns,
+        " Chars per line ",
+        inputText 5 "chars-per-line" ptsCharsPerLine,
+        " ",
+        HT.select ! AT.name "orientation"
+        $ F.foldMap option [("portrait", Portrait, "Portrait"),
+                            ("landscape", Landscape, "Landscape")],
+        " ",
+        HT.input ! AT.type_ "submit" ! AT.value "PDF"]
     where
         inputText
                 :: Int -> AttributeValue -> L.Lens' PdfTextSettings Int -> Html
