@@ -68,6 +68,13 @@ import qualified Data.Text.Encoding          as T
 import           System.Posix.Files (getFileStatus, isDirectory, isRegularFile)
 
 
+data PdfTextSettings = PdfTextSettings {
+        _ptsColumns :: Int,
+        _ptsCharsPerLine :: Int,
+        _ptsHeader :: String}
+$(L.makeLenses ''PdfTextSettings)
+
+
 tryIOException :: X.MonadCatch m => m a -> m (Either IOError a)
 tryIOException = X.try
 
@@ -199,10 +206,29 @@ extensionHandlers = M.fromList . concat $ [
     where
         keys >< value = flip (,) value . ('.' :) <$> keys
 
+
+a2ps :: PdfTextSettings -> CreateProcess
+a2ps pts = proc "a2ps" [
+        "--columns=" ++ show (pts ^. ptsColumns),
+        "--rows=1",
+        "--chars-per-line=" ++ show (pts ^. ptsCharsPerLine),
+        "--tabsize=8",
+        "--borders=no",
+        "--line-numbers=10",
+        "--no-header",
+        "--header=" ++ pts ^. ptsHeader,
+        "--pretty-print=plain",
+        "--output=-"]
+
+defPts :: String -> PdfTextSettings
+defPts _ptsHeader = PdfTextSettings{..} where
+        _ptsColumns = 2
+        _ptsCharsPerLine = 132
+
 textFileResource :: ResourceHandler
 textFileResource titles nf [] query = return . existingResource
         $ existingGet
-          ?~ ((case join $ lookup "as" query of
+          ?~ ((case lookupBS "as" of
                 Just "pdf" -> getPdf
                 _          -> getPage)
               =<< liftIO (B.readFile nf))
@@ -219,16 +245,30 @@ textFileResource titles nf [] query = return . existingResource
                     . liftIO
                     . runResourceT
                     $ yield bs
-                      $= conduitProcess (proc "a2ps"
-                                         ["--columns=2", "--rows=1",
-                                          "--chars-per-line=132",
-                                          "--tabsize=8", "--borders=no",
-                                          "--line-numbers=10", "--no-header",
-                                          "--header=" ++ nf,
-                                          "--pretty-print=plain", "--output=-"])
+                      $= conduitProcess (a2ps . lookupPtsDef $ defPts nf)
                       =$= conduitProcess (proc "ps2pdf"
                                           ["-sPAPERSIZE=a4", "-", "-"])
                       $$ consume
+        lookupBS :: ByteString -> Maybe ByteString
+        lookupBS key = join $ lookup key query
+        lookupPos :: ByteString -> Maybe Int
+        lookupPos = parsePos <=< lookupBS
+        parsePos :: ByteString -> Maybe Int
+        parsePos = k
+                   . fst . BC.spanEnd isSpace
+                   . BC.dropWhile (\ch -> isSpace ch || ch == '0')
+            where
+                k bs = do
+                        guard $ not (BC.null bs) && BC.all isDigit bs
+                        return
+                            . foldl1' (\x y -> 10 * x + y)
+                            . map (\ch -> fromEnum ch - fromEnum '0')
+                            . BC.unpack
+                            $ bs
+        lookupPtsDef :: PdfTextSettings -> PdfTextSettings
+        lookupPtsDef
+                = maybe id (ptsColumns .~) (lookupPos "columns")
+                  . maybe id (ptsCharsPerLine .~) (lookupPos "chars-per-line")
 textFileResource _titles _nf _path _query = return . missingResource $ id
 
 binaryFileResource :: ByteString -> ResourceHandler

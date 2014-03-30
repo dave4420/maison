@@ -80,7 +80,8 @@ executable maison
                      , warp == 2.0.*
   hs-source-dirs:      maison
   default-language:    Haskell2010
-  default-extensions:  RecordWildCards
+  default-extensions:  TemplateHaskell
+                     , RecordWildCards
                      , OverloadedStrings
                      , LambdaCase
   GHC-Options:         -Wall -Werror -rtsopts -with-rtsopts=-T -threaded
