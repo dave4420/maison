@@ -2,6 +2,7 @@ module FileTree (fileTreeSite, multiUserFileTreeSite) where
 
 import           Ledger
 import           Page
+import           TextFile
 
 -- base
 import           Control.Applicative
@@ -23,11 +24,6 @@ import qualified Text.Blaze.Html5.Attributes as AT
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString             as B
 import qualified Data.ByteString.Char8       as BC
-import qualified Data.ByteString.Lazy        as BL
-
--- conduit
-import           Data.Conduit
-import           Data.Conduit.List (consume)
 
 -- containers
 import           Data.Map (Map)
@@ -52,9 +48,6 @@ import           Http
 -- pandoc
 import qualified Text.Pandoc                 as PANDOC
 
--- process-conduit
-import           Data.Conduit.Process
-
 -- semigroups
 import qualified Data.List.NonEmpty          as SG
 import qualified Data.Semigroup              as SG
@@ -66,13 +59,6 @@ import qualified Data.Text.Encoding          as T
 
 -- unix
 import           System.Posix.Files (getFileStatus, isDirectory, isRegularFile)
-
-
-data PdfTextSettings = PdfTextSettings {
-        _ptsColumns :: Int,
-        _ptsCharsPerLine :: Int,
-        _ptsHeader :: String}
-$(L.makeLenses ''PdfTextSettings)
 
 
 tryIOException :: X.MonadCatch m => m a -> m (Either IOError a)
@@ -182,9 +168,6 @@ directoryEntity titles (nds, nfs) = do
         htFile nf = HT.li $ HT.a ! AT.href (HT.toValue nf) $ toHtml nf
 
 
-type ResourceHandler
-        = NonEmpty Text -> FilePath -> [Text] -> Query -> HttpIO Resource
-
 fileResource :: ResourceHandler
 fileResource titles nf = M.findWithDefault textFileResource
                                            (map toLower $ takeExtension nf)
@@ -205,71 +188,6 @@ extensionHandlers = M.fromList . concat $ [
         ["pdf"] >< binaryFileResource "application/pdf"]
     where
         keys >< value = flip (,) value . ('.' :) <$> keys
-
-
-a2ps :: PdfTextSettings -> CreateProcess
-a2ps pts = proc "a2ps" [
-        "--columns=" ++ show (pts ^. ptsColumns),
-        "--rows=1",
-        "--chars-per-line=" ++ show (pts ^. ptsCharsPerLine),
-        "--tabsize=8",
-        "--borders=no",
-        "--line-numbers=10",
-        "--no-header",
-        "--header=" ++ pts ^. ptsHeader,
-        "--pretty-print=plain",
-        "--output=-"]
-
-defPts :: String -> PdfTextSettings
-defPts _ptsHeader = PdfTextSettings{..} where
-        _ptsColumns = 2
-        _ptsCharsPerLine = 132
-
-textFileResource :: ResourceHandler
-textFileResource titles nf [] query = return . existingResource
-        $ existingGet
-          ?~ ((case lookupBS "as" of
-                Just "pdf" -> getPdf
-                _          -> getPage)
-              =<< liftIO (B.readFile nf))
-    where
-        getPage bs = do
-                let t = T.decodeUtf8 bs
-                breadcrumbs <- breadcrumbsFromTitles titles
-                return
-                    . entityFromPage breadcrumbs
-                    $ HT.pre (toHtml t)
-        getPdf bs = do
-                fmap (entityFromLazyByteString "application/pdf"
-                      . BL.fromChunks)
-                    . liftIO
-                    . runResourceT
-                    $ yield bs
-                      $= conduitProcess (a2ps . lookupPtsDef $ defPts nf)
-                      =$= conduitProcess (proc "ps2pdf"
-                                          ["-sPAPERSIZE=a4", "-", "-"])
-                      $$ consume
-        lookupBS :: ByteString -> Maybe ByteString
-        lookupBS key = join $ lookup key query
-        lookupPos :: ByteString -> Maybe Int
-        lookupPos = parsePos <=< lookupBS
-        parsePos :: ByteString -> Maybe Int
-        parsePos = k
-                   . fst . BC.spanEnd isSpace
-                   . BC.dropWhile (\ch -> isSpace ch || ch == '0')
-            where
-                k bs = do
-                        guard $ not (BC.null bs) && BC.all isDigit bs
-                        return
-                            . foldl1' (\x y -> 10 * x + y)
-                            . map (\ch -> fromEnum ch - fromEnum '0')
-                            . BC.unpack
-                            $ bs
-        lookupPtsDef :: PdfTextSettings -> PdfTextSettings
-        lookupPtsDef
-                = maybe id (ptsColumns .~) (lookupPos "columns")
-                  . maybe id (ptsCharsPerLine .~) (lookupPos "chars-per-line")
-textFileResource _titles _nf _path _query = return . missingResource $ id
 
 binaryFileResource :: ByteString -> ResourceHandler
 binaryFileResource mimeType _titles nf [] _query

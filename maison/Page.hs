@@ -1,4 +1,8 @@
-module Page (Breadcrumbs, entityFromPage, breadcrumbsFromTitles) where
+module Page (
+        ResourceHandler,
+        Breadcrumbs, entityFromPage, breadcrumbsFromTitles
+)
+where
 
 -- base
 import           Data.List
@@ -21,6 +25,10 @@ import qualified Data.List.NonEmpty          as SG
 -- text
 import           Data.Text (Text)
 import qualified Data.Text              as T
+
+
+type ResourceHandler
+        = NonEmpty Text -> FilePath -> [Text] -> Query -> HttpIO Resource
 
 
 -- | First element is our current location, last is the root.
