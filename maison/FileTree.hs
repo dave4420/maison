@@ -201,19 +201,19 @@ extensionHandlers = M.fromList . concat $ [
 
 textFileResource :: ResourceHandler
 textFileResource titles nf [] query = return . existingResource
-        $ existingGet ?~ (case join $ lookup "as" query of
+        $ existingGet
+          ?~ ((case join $ lookup "as" query of
                 Just "pdf" -> getPdf
                 _          -> getPage)
+              =<< liftIO (B.readFile nf))
     where
-        getPage = do
-                bs <- liftIO $ B.readFile nf
+        getPage bs = do
                 let t = T.decodeUtf8 bs
                 breadcrumbs <- breadcrumbsFromTitles titles
                 return
                     . entityFromPage breadcrumbs
                     $ HT.pre (toHtml t)
-        getPdf = do
-                bs <- liftIO $ B.readFile nf
+        getPdf bs = do
                 fmap (entityFromLazyByteString "application/pdf"
                       . BL.fromChunks)
                     . liftIO
