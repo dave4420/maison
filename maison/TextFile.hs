@@ -56,15 +56,21 @@ fileStatistics t = Statistics{..} where
         _stTrailingNewline = T.null . last $ lines'
 
 
+data Orientation = Portrait | Landscape deriving Eq
+
 data PdfTextSettings = PdfTextSettings {
         _ptsColumns :: Int,
         _ptsCharsPerLine :: Int,
+        _ptsOrientation :: Orientation,
         _ptsHeader :: String}
 $(L.makeLenses ''PdfTextSettings)
 
 
 a2ps :: PdfTextSettings -> CreateProcess
 a2ps pts = proc "a2ps" [
+        case pts ^. ptsOrientation of
+                Portrait  -> "--portrait"
+                Landscape -> "--landscape",
         "--columns=" ++ show (pts ^. ptsColumns),
         "--rows=1",
         "--chars-per-line=" ++ show (pts ^. ptsCharsPerLine),
@@ -78,6 +84,7 @@ a2ps pts = proc "a2ps" [
 
 defPts :: String -> PdfTextSettings
 defPts _ptsHeader = PdfTextSettings{..} where
+        _ptsOrientation = Landscape
         _ptsColumns = 2
         _ptsCharsPerLine = 132
 
@@ -120,25 +127,37 @@ textFileResource titles nf [] query = return . existingResource
         lookupPos :: ByteString -> Maybe Int
         lookupPos = parsePos <=< lookupBS
 
-        parsePos :: ByteString -> Maybe Int
-        parsePos = k
-                   . fst . BC.spanEnd isSpace
-                   . BC.dropWhile (\ch -> isSpace ch || ch == '0')
-            where
-                k bs = do
-                        guard $ not (BC.null bs) && BC.all isDigit bs
-                        return
-                            . foldl1' (\x y -> 10 * x + y)
-                            . map (\ch -> fromEnum ch - fromEnum '0')
-                            . BC.unpack
-                            $ bs
+        lookupOrientation :: ByteString -> Maybe Orientation
+        lookupOrientation = parseOrientation <=< lookupBS
 
         lookupPtsDef :: PdfTextSettings -> PdfTextSettings
         lookupPtsDef
                 = maybe id (ptsColumns .~) (lookupPos "columns")
                   . maybe id (ptsCharsPerLine .~) (lookupPos "chars-per-line")
+                  . maybe id (ptsOrientation .~)
+                             (lookupOrientation "orientation")
 
 textFileResource _titles _nf _path _query = return . missingResource $ id
+
+
+parsePos :: ByteString -> Maybe Int
+parsePos = k
+           . fst . BC.spanEnd isSpace
+           . BC.dropWhile (\ch -> isSpace ch || ch == '0')
+    where
+        k bs = do
+                guard $ not (BC.null bs) && BC.all isDigit bs
+                return
+                    . foldl1' (\x y -> 10 * x + y)
+                    . map (\ch -> fromEnum ch - fromEnum '0')
+                    . BC.unpack
+                    $ bs
+
+parseOrientation :: ByteString -> Maybe Orientation
+parseOrientation = \case
+        "portrait"  -> Just Portrait
+        "landscape" -> Just Landscape
+        _           -> Nothing
 
 
 show' :: (Show a, IsString b) => a -> b
@@ -154,6 +173,10 @@ formFromPts pts
                 " Chars per line ",
                 inputText 5 "chars-per-line" ptsCharsPerLine,
                 " ",
+                HT.select ! AT.name "orientation"
+                $ F.foldMap option [("portrait", Portrait, "Portrait"),
+                                    ("landscape", Landscape, "Landscape")],
+                " ",
                 HT.input ! AT.type_ "submit" ! AT.value "PDF"]
     where
         inputText
@@ -162,6 +185,11 @@ formFromPts pts
                 = HT.input ! AT.size (show' size)
                            ! AT.name name
                            ! AT.value (show' $ pts ^. value)
+        option (value, constant, text)
+                = HT.option
+                  ! AT.value value
+                  ! AT.selected (toValue $ pts ^. ptsOrientation == constant)
+                  $ text
 
 htStats :: Statistics -> Html
 htStats st = HT.ul . F.foldMap HT.li . catMaybes $ [
