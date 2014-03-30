@@ -84,6 +84,7 @@ executable maison
                      , RecordWildCards
                      , OverloadedStrings
                      , LambdaCase
+                     , RankNTypes
   GHC-Options:         -Wall -Werror -rtsopts -with-rtsopts=-T -threaded
 
   main-is:             Main.hs

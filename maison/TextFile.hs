@@ -5,7 +5,9 @@ import           Page
 -- base
 import           Control.Monad
 import           Data.Char
+import qualified Data.Foldable               as F
 import           Data.List
+import           Data.Maybe
 import           Data.Monoid
 import           Data.String
 
@@ -35,7 +37,23 @@ import           Http
 import           Data.Conduit.Process
 
 -- text
+import           Data.Text (Text)
+import qualified Data.Text                   as T
 import qualified Data.Text.Encoding          as T
+
+
+data Statistics = Statistics {
+        _stLengthInLines :: Int,
+        _stLengthOfLongestLine :: Int,
+        _stTrailingNewline :: Bool}
+$(L.makeLenses ''Statistics)
+
+fileStatistics :: Text -> Statistics
+fileStatistics t = Statistics{..} where
+        lines' = T.splitOn "\n" t
+        _stLengthInLines = length lines' - if _stTrailingNewline then 1 else 0
+        _stLengthOfLongestLine = maximum . map T.length $ lines'
+        _stTrailingNewline = T.null . last $ lines'
 
 
 data PdfTextSettings = PdfTextSettings {
@@ -43,6 +61,7 @@ data PdfTextSettings = PdfTextSettings {
         _ptsCharsPerLine :: Int,
         _ptsHeader :: String}
 $(L.makeLenses ''PdfTextSettings)
+
 
 a2ps :: PdfTextSettings -> CreateProcess
 a2ps pts = proc "a2ps" [
@@ -77,10 +96,11 @@ textFileResource titles nf [] query = return . existingResource
 
         getPage bs = do
                 let t = T.decodeUtf8 bs
+                    stats = fileStatistics t
                 breadcrumbs <- breadcrumbsFromTitles titles
                 return
                     . entityFromPage breadcrumbs
-                    $ formFromPts pts <> HT.pre (toHtml t)
+                    $ formFromPts pts <> htStats stats <> HT.pre (toHtml t)
 
         getPdf bs = do
                 fmap (entityFromLazyByteString "application/pdf"
@@ -121,6 +141,9 @@ textFileResource titles nf [] query = return . existingResource
 textFileResource _titles _nf _path _query = return . missingResource $ id
 
 
+show' :: (Show a, IsString b) => a -> b
+show' = fromString . show
+
 formFromPts :: PdfTextSettings -> Html
 formFromPts pts
         = HT.form ! AT.target "?as=pdf"
@@ -133,8 +156,16 @@ formFromPts pts
                 " ",
                 HT.input ! AT.type_ "submit" ! AT.value "PDF"]
     where
+        inputText
+                :: Int -> AttributeValue -> L.Lens' PdfTextSettings Int -> Html
         inputText size name value
                 = HT.input ! AT.size (show' size)
                            ! AT.name name
                            ! AT.value (show' $ pts ^. value)
-        show' = fromString . show
+
+htStats :: Statistics -> Html
+htStats st = HT.ul . F.foldMap HT.li . catMaybes $ [
+        Just $ show' (st ^. stLengthInLines) <> " lines",
+        Just $ "longest line has " <> show' (st ^. stLengthOfLongestLine)
+               <> " characters",
+        if st ^. stTrailingNewline then Nothing else Just "no trailing newline"]
