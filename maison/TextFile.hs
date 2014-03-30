@@ -82,11 +82,19 @@ a2ps pts = proc "a2ps" [
         "--pretty-print=plain",
         "--output=-"]
 
-defPts :: String -> PdfTextSettings
-defPts _ptsHeader = PdfTextSettings{..} where
-        _ptsOrientation = Landscape
-        _ptsColumns = 2
-        _ptsCharsPerLine = 132
+defPts :: String -> Statistics -> PdfTextSettings
+defPts _ptsHeader stats = PdfTextSettings{..} where
+        (_ptsOrientation, _ptsColumns, _ptsCharsPerLine)
+                = case stats ^. stLengthOfLongestLine of
+                        x | x <= 80 -> (Portrait, 2, 80)
+                          | x <= 88 -> (Portrait, 2, x)
+                          | x <= 132 -> (Landscape, 2, 132)
+                          | x <= 145 -> (Landscape, 2, x)
+                          | x <= 160 -> (Portrait, 1, 160)
+                          | x <= 176 -> (Portrait, 1, x)
+                          | x <= 264 -> (Landscape, 1, 264)
+                          | x <= 290 -> (Landscape, 1, x)
+                          | otherwise -> (Landscape, 2, 132)
 
 ps2pdf :: CreateProcess
 ps2pdf = proc "ps2pdf" ["-sPAPERSIZE=a4", "-", "-"]
@@ -104,12 +112,16 @@ textFileResource titles nf [] query = return . existingResource
         getPage bs = do
                 let t = T.decodeUtf8 bs
                     stats = fileStatistics t
+                    pts = lookupPtsDef $ defPts nf stats
                 breadcrumbs <- breadcrumbsFromTitles titles
                 return
                     . entityFromPage breadcrumbs
                     $ formFromPts pts <> htStats stats <> HT.pre (toHtml t)
 
         getPdf bs = do
+                let t = T.decodeUtf8 bs
+                    stats = fileStatistics t
+                    pts = lookupPtsDef $ defPts nf stats
                 fmap (entityFromLazyByteString "application/pdf"
                       . BL.fromChunks)
                     . liftIO
@@ -118,8 +130,6 @@ textFileResource titles nf [] query = return . existingResource
                       $= conduitProcess (a2ps pts)
                       =$= conduitProcess ps2pdf
                       $$ consume
-
-        pts = lookupPtsDef $ defPts nf
 
         lookupBS :: ByteString -> Maybe ByteString
         lookupBS key = join $ lookup key query
