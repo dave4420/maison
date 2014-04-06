@@ -5,7 +5,9 @@ import           Page
 -- base
 import           Control.Applicative
 import qualified Data.Foldable               as F
+import           Data.Function
 import           Data.List
+import           Data.Maybe
 import           Data.Monoid
 import           Data.String
 
@@ -13,9 +15,6 @@ import           Data.String
 import           Text.Blaze.Html
 import qualified Text.Blaze.Html5            as HT
 import qualified Text.Blaze.Html5.Attributes as AT
-
--- containers
-import qualified Data.Set                    as S
 
 -- hledger-lib
 import qualified Hledger                     as LEDGER
@@ -88,7 +87,7 @@ ledgerFileResource titles nf path _query = case path of
 balances :: Breadcrumbs -> LEDGER.Journal -> HttpIO Entity
 balances breadcrumbs journal = liftIO $ do
         today <- localDay . zonedTimeToLocalTime <$> getZonedTime
-        return . entityFromPage breadcrumbs $ table today
+        return . entityFromPage breadcrumbs $ css <> table today
      where
 
         report today
@@ -100,30 +99,38 @@ balances breadcrumbs journal = liftIO $ do
             where
                 tomorrow = addDays 1 today
 
-        table = HT.table . mconcat . map row . leafAccountsOnly . fst . report
-
-        leafAccountsOnly accts
-                = filter (\acct -> S.notMember (acct ^. L._1) unwanted) accts
-            where
-                unwanted = S.fromList . concatMap (^. L._1 . L.to parents)
-                           $ accts
-                parents s = case dropWhileEnd (':' /=) s of
-                        "" -> []
-                        s' -> let s'' = init s' in s'' : parents s''
+        table = HT.table . mconcat . map row . fst . report
 
         row :: LEDGER.BalanceReportItem -> Html
         row (fullName, _shortName, _indent, amount)
                 = HT.tr
                   . mconcat
                   $ [HT.td ! AT.style "text-align:left"
+                           ! AT.class_ (bulletClass . length . filter (== ':')
+                                        $ fullName)
                      $ HT.a ! AT.href (fromString $ "./" ++ fullName)
-                       $ fromString fullName,
+                       $ fromString (nodeName fullName),
                      HT.td ! AT.style "text-align:right"
                      $ balance,
                      HT.td ! AT.style "text-align:left"
                      $ tag]
             where
                 (balance, tag) = formatAmountWithTag amount
+                nodeName = last . groupBy ((==) `on` (== ':'))
+
+        bulletClass i = fromString $ "level " ++ ('o' : show i)
+
+        css = HT.style . mconcat
+              $ ".level { display: list-item; \
+                        \ list-style: disc inside; \
+                        \ min-width: 8em; }"
+                : zipWith padding [2,4..] [1..4]
+            where
+                padding :: IsString a => Int -> Int -> a
+                padding left level
+                        = fromString
+                          $ ".o" <> show level <> " { padding-left: "
+                            <> show left <> "em; }"
 
 
 transactions :: Breadcrumbs -> LEDGER.Journal -> String -> HttpIO Entity
@@ -149,8 +156,33 @@ transactions breadcrumbs journal acName = liftIO $ do
                    :)
                 . map row
                 . reverse
+                . groupTransactions
                 . snd
                 . report
+
+        groupTransactions
+                :: [LEDGER.PostingsReportItem] -> [LEDGER.PostingsReportItem]
+        groupTransactions
+                = mapMaybe netTransaction . filter isStartOfTransaction . tails
+            where
+                isStartOfTransaction (x : _) = startsTransaction x
+                isStartOfTransaction _       = False
+                startsTransaction (Just _, Just _, _, _) = True
+                startsTransaction _                      = False
+                netTransaction [] = Nothing
+                netTransaction (x : xs)
+                        = netTransaction'
+                          $ x : takeWhile (not . startsTransaction) xs
+                netTransaction' [] = Nothing
+                netTransaction' xs @ ((when, what, posting, _) : _)
+                    | xfer == LEDGER.Mixed []
+                        = Nothing
+                    | otherwise
+                        = Just (when, what, posting {LEDGER.pamount = xfer},
+                                last xs ^. L._4)
+                    where
+                        xfer = filterAmount isNonZero . sum
+                               $ xs ^.. L.traverse . L._3 . L.to LEDGER.pamount
 
         row :: LEDGER.PostingsReportItem -> Html
         row (when, what, LEDGER.Posting {pamount = pamount}, amount)
@@ -193,6 +225,7 @@ filterAmount
         :: (LEDGER.Amount -> Bool) -> LEDGER.MixedAmount -> LEDGER.MixedAmount
 filterAmount p (LEDGER.Mixed amounts) = LEDGER.Mixed (filter p amounts)
 
-isCredit, isDebit :: LEDGER.Amount -> Bool
-isCredit LEDGER.Amount{..} = aquantity < 0
-isDebit  LEDGER.Amount{..} = 0 < aquantity
+isCredit, isDebit, isNonZero :: LEDGER.Amount -> Bool
+isCredit  LEDGER.Amount{..} = aquantity < 0
+isDebit   LEDGER.Amount{..} = 0 < aquantity
+isNonZero LEDGER.Amount{..} = 0 /= aquantity
