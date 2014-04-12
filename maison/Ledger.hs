@@ -99,7 +99,14 @@ balances breadcrumbs journal = liftIO $ do
             where
                 tomorrow = addDays 1 today
 
-        table today = HT.table $ columns <> F.foldMap row (fst $ report today)
+        table today = HT.table $ columns
+                                 <> F.foldMap row books
+                                 <> plRow (sum $ mapMaybe revenueExpense books)
+            where
+                (books, _) = report today
+                revenueExpense ("revenue", _, _, amount) = Just amount
+                revenueExpense ("expense", _, _, amount) = Just amount
+                revenueExpense _                         = Nothing
 
         row :: LEDGER.BalanceReportItem -> Html
         row (fullName, _shortName, _indent, amount)
@@ -114,6 +121,15 @@ balances breadcrumbs journal = liftIO $ do
             where
                 (balance, tag) = formatAmountWithTag amount
                 nodeName = last . groupBy ((==) `on` (== ':'))
+
+        plRow :: LEDGER.MixedAmount -> Html
+        plRow amount = case formatAmount amount of
+                CR profit -> f "profit" profit
+                DR loss -> f "loss" loss
+                Zero -> mempty
+                PseudoDR amt -> f "loss???" amt
+            where
+                f label amt = HT.tr $ HT.td label <> HT.td amt
 
         columns = HT.colgroup $ F.foldMap (\class_ -> HT.col ! AT.class_ class_)
                                           ["name", "magnitude", "sign"]
@@ -206,13 +222,25 @@ transactions breadcrumbs journal acName = liftIO $ do
                 fmtDate = formatTime defaultTimeLocale "%e %B %Y"
 
 
+data FormattedAmount
+        = CR Html
+        | DR Html
+        | Zero
+        | PseudoDR Html
+
+formatAmount :: LEDGER.MixedAmount -> FormattedAmount
+formatAmount amount
+        | allAmount isCredit amount       = CR $ tshowMixedAmount (-amount)
+        | allAmount isDebit amount        = DR $ tshowMixedAmount amount
+        | LEDGER.isZeroMixedAmount amount = Zero
+        | otherwise                       = PseudoDR $ tshowMixedAmount amount
+
 formatAmountWithTag :: LEDGER.MixedAmount -> (Html, Html)
-formatAmountWithTag amount
-        | allAmount isCredit amount       = (tshowMixedAmount $ negate amount,
-                                             "CR")
-        | allAmount isDebit amount        = (tshowMixedAmount amount, "DR")
-        | LEDGER.isZeroMixedAmount amount = ("0", "")
-        | otherwise                       = (tshowMixedAmount amount, "DR?")
+formatAmountWithTag amount = case formatAmount amount of
+        CR t -> (t, "CR")
+        DR t -> (t, "DR")
+        Zero -> ("0", "")
+        PseudoDR t -> (t, "DR?")
 
 tshowMixedAmount, tshowNonZeroMixedAmount
         :: IsString a => LEDGER.MixedAmount -> a
