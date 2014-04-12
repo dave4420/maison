@@ -99,29 +99,31 @@ balances breadcrumbs journal = liftIO $ do
             where
                 tomorrow = addDays 1 today
 
-        table = HT.table . mconcat . map row . fst . report
+        table today = HT.table $ columns <> F.foldMap row (fst $ report today)
 
         row :: LEDGER.BalanceReportItem -> Html
         row (fullName, _shortName, _indent, amount)
                 = HT.tr
                   . mconcat
-                  $ [HT.td ! AT.style "text-align:left"
-                           ! AT.class_ (bulletClass . length . filter (== ':')
+                  $ [HT.td ! AT.class_ (bulletClass . length . filter (== ':')
                                         $ fullName)
                      $ HT.a ! AT.href (fromString $ "./" ++ fullName)
                        $ fromString (nodeName fullName),
-                     HT.td ! AT.style "text-align:right"
-                     $ balance,
-                     HT.td ! AT.style "text-align:left"
-                     $ tag]
+                     HT.td balance,
+                     HT.td tag]
             where
                 (balance, tag) = formatAmountWithTag amount
                 nodeName = last . groupBy ((==) `on` (== ':'))
 
+        columns = HT.colgroup $ F.foldMap (\class_ -> HT.col ! AT.class_ class_)
+                                          ["name", "magnitude", "sign"]
+
         bulletClass i = fromString $ "level " ++ ('o' : show i)
 
         css = HT.style . mconcat
-              $ ".level { display: list-item; \
+              $ ".name, .sign { text-align: left; } \
+               \ .magnitude { text-align: right; } \
+               \ .level { display: list-item; \
                         \ list-style: disc inside; \
                         \ min-width: 8em; }"
                 : zipWith padding [2,4..] [1..4]
