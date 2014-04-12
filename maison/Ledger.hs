@@ -99,8 +99,7 @@ balances breadcrumbs journal = liftIO $ do
             where
                 tomorrow = addDays 1 today
 
-        table today = HT.table $ columns
-                                 <> F.foldMap row books
+        table today = HT.table $ F.foldMap row books
                                  <> plRow (sum $ mapMaybe revenueExpense books)
             where
                 (books, _) = report today
@@ -112,12 +111,15 @@ balances breadcrumbs journal = liftIO $ do
         row (fullName, _shortName, _indent, amount)
                 = HT.tr
                   . mconcat
-                  $ [HT.td ! AT.class_ (bulletClass . length . filter (== ':')
-                                        $ fullName)
+                  $ [HT.td ! AT.class_ (mconcat [bulletClass
+                                                 . length
+                                                 . filter (== ':')
+                                                 $ fullName,
+                                                 " name"])
                      $ HT.a ! AT.href (fromString $ "./" ++ fullName)
                        $ fromString (nodeName fullName),
-                     HT.td balance,
-                     HT.td tag]
+                     tdMagnitude balance,
+                     tdSign tag]
             where
                 (balance, tag) = formatAmountWithTag amount
                 nodeName = last . groupBy ((==) `on` (== ':'))
@@ -129,10 +131,11 @@ balances breadcrumbs journal = liftIO $ do
                 Zero -> mempty
                 PseudoDR amt -> f "loss???" amt
             where
-                f label amt = HT.tr $ HT.td label <> HT.td amt
+                f label amt = HT.tr $ tdName label <> tdMagnitude amt
 
-        columns = HT.colgroup $ F.foldMap (\class_ -> HT.col ! AT.class_ class_)
-                                          ["name", "magnitude", "sign"]
+        tdName = HT.td ! AT.class_ "name"
+        tdMagnitude = HT.td ! AT.class_ "magnitude"
+        tdSign = HT.td ! AT.class_ "sign"
 
         bulletClass i = fromString $ "level " ++ ('o' : show i)
 
