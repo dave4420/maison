@@ -24,6 +24,8 @@ module Http (
         HttpT(), HttpIO,
         Request(),
         requestUri,
+        httpClientAddress,
+        SockAddr(..),
         -- * Etc
         sealSite, sealSiteNoAuth,
         module Http.Entity,
@@ -67,6 +69,9 @@ import           Control.Lens.Operators
 
 -- mtl
 import           Control.Monad.Reader.Class
+
+-- network
+import           Network.Socket (SockAddr(..))
 
 -- semigroups
 import           Data.List.NonEmpty (NonEmpty(..), nonEmpty)
@@ -197,6 +202,9 @@ data UglyStatus = UglyStatus HTTP.ResponseHeaders HTTP.Status
 data Request = Request {_requestWaiRequest :: WAI.Request,
                         _requestUri :: Uri}
 $(L.makeLenses ''Request)
+
+httpClientAddress :: L.Getter Request SockAddr
+httpClientAddress = requestWaiRequest . L.to WAI.remoteHost
 
 oops :: Monad m => HTTP.Status -> HttpT m a
 oops = oops' []

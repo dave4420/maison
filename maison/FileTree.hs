@@ -32,6 +32,9 @@ import qualified Data.Map                    as M
 -- directory
 import           System.Directory (getDirectoryContents)
 
+-- errors
+import           Control.Error
+
 -- exceptions
 import qualified Control.Monad.Catch           as X
 
@@ -73,26 +76,23 @@ fileTreeSite title' nd = sealSiteNoAuth $ \path query
 multiUserFileTreeSite :: Text -> [Text] -> Site
 multiUserFileTreeSite title' usernames = sealSite $ \path query
     -> let user :| subpath = path
-           checkPassword username password
-               --TODO: plug into PAM instead
-               | T.encodeUtf8 user == username
-                           = liftIO $ do
-                   let nf = (</> ".password") <$> M.lookup user home
-                   pw <- maybe (return Nothing)
-                               (liftM (fmap (BC.takeWhile (>= ' '))
-                                       . hushSomeException)
-                                . X.try . B.readFile)
-                               nf
-                   return $ Just password ==  pw
-               | otherwise = return False
            resource = case path of
                    "" :| [] -> return rootResource
                    _ | Just nd <- M.lookup user home
                      -> fetchResource (user :| [title']) nd subpath query
                      | otherwise -> return $ missingResource id
-       in if M.member user home && not (["vc.ln", "pub"] `isPrefixOf` subpath)
-             then return . basicAuth "Dionysus" checkPassword $ const resource
-             else noAuth <$> resource
+           nfAuthBarrier = do
+                guard . not $ ["vc.ln", "pub"] `isPrefixOf` subpath
+                (</> ".password") <$> M.lookup user home
+       in maybeT (noAuth <$> resource)
+                 (\checkPassword -> return . basicAuth "Dionysus" checkPassword
+                                    $ const resource)
+          $ do
+                authBarrier
+                 <- lift . lift . fmap (parseAuthBarrier user) . B.readFile
+                    =<< hoistMaybe nfAuthBarrier
+                clientAddress <- L.view httpClientAddress
+                satisfyAuthBarrier authBarrier clientAddress
     where
         home = M.fromList . map (\user -> (user, "/home/" ++ T.unpack user))
                $ usernames
@@ -110,6 +110,29 @@ multiUserFileTreeSite title' usernames = sealSite $ \path query
                         priv = HT.small
                                $ HT.a ! AT.href (HT.toValue n <> "/")
                                $ "(private)"
+
+
+data AuthBarrier = AuthBarrier (Maybe (Username, Password)) [ByteString]
+
+parseAuthBarrier :: Text -> ByteString -> AuthBarrier
+parseAuthBarrier user bs = AuthBarrier credentials peers where
+        l : ls = BC.filter ('\r' /=) <$> BC.lines bs
+        peers = filter (not . B.null) ls
+        credentials = do
+                guard . not . B.null $ l
+                return (T.encodeUtf8 user, l)
+
+satisfyAuthBarrier :: (MonadIO io, MonadPlus io, Monad m)
+                   => AuthBarrier
+                      -> SockAddr
+                      -> io (Username -> Password -> m Bool)
+-- ^ Fails if request should be allowed through without authentication.
+--   Otherwise returns password-checking function.
+satisfyAuthBarrier (AuthBarrier credentials _trustedPeers) _sockAddr = do
+        return
+            . maybe (\_ _ -> return False)
+                    (\desired -> curry $ \got -> return $ desired == got)
+            $ credentials
 
 
 fetchResource
@@ -213,7 +236,3 @@ markdownFileResource titles nf [] _query
                     $ bs
 markdownFileResource _titles _nf _path _query
         = return . missingResource $ id
-
-
-hushSomeException :: Either X.SomeException a -> Maybe a
-hushSomeException = const Nothing ||| Just
