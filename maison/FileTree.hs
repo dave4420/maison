@@ -25,12 +25,21 @@ import           Data.ByteString (ByteString)
 import qualified Data.ByteString             as B
 import qualified Data.ByteString.Char8       as BC
 
+-- case-insensitive
+import           Data.CaseInsensitive (CI)
+import qualified Data.CaseInsensitive        as CI
+
 -- containers
 import           Data.Map (Map)
 import qualified Data.Map                    as M
+import           Data.Set (Set)
+import qualified Data.Set                    as S
 
 -- directory
 import           System.Directory (getDirectoryContents)
+
+-- dns
+import qualified Network.DNS                 as DNS
 
 -- errors
 import           Control.Error
@@ -47,6 +56,9 @@ import           Control.Lens.Operators
 
 -- maison
 import           Http
+
+-- network
+import qualified Network.Socket              as NET
 
 -- pandoc
 import qualified Text.Pandoc                 as PANDOC
@@ -112,12 +124,13 @@ multiUserFileTreeSite title' usernames = sealSite $ \path query
                                $ "(private)"
 
 
-data AuthBarrier = AuthBarrier (Maybe (Username, Password)) [ByteString]
+data AuthBarrier = AuthBarrier (Maybe (Username, Password))
+                               (Set (CI ByteString))
 
 parseAuthBarrier :: Text -> ByteString -> AuthBarrier
 parseAuthBarrier user bs = AuthBarrier credentials peers where
         l : ls = BC.filter ('\r' /=) <$> BC.lines bs
-        peers = filter (not . B.null) ls
+        peers = S.fromList $ CI.mk <$> filter (not . B.null) ls
         credentials = do
                 guard . not . B.null $ l
                 return (T.encodeUtf8 user, l)
@@ -128,7 +141,19 @@ satisfyAuthBarrier :: (MonadIO io, MonadPlus io, Monad m)
                       -> io (Username -> Password -> m Bool)
 -- ^ Fails if request should be allowed through without authentication.
 --   Otherwise returns password-checking function.
-satisfyAuthBarrier (AuthBarrier credentials _trustedPeers) _sockAddr = do
+satisfyAuthBarrier (AuthBarrier credentials trustedPeers) sockAddr = do
+        hostAddress <- case sockAddr of
+                SockAddrInet _port host
+                  -> liftIO $ BC.pack <$> NET.inet_ntoa host
+                _ -> mzero        -- IPv6 not suppported
+        guard $ CI.mk hostAddress `S.notMember` trustedPeers
+        hostnames <- liftIO $ do
+                rs <- DNS.makeResolvSeed DNS.defaultResolvConf
+                DNS.withResolver rs
+                    $ \resolver -> DNS.lookupRDNS resolver hostAddress
+        guard . either (const True)
+                       (all (`S.notMember` trustedPeers) . map CI.mk)
+              $ hostnames
         return
             . maybe (\_ _ -> return False)
                     (\desired -> curry $ \got -> return $ desired == got)

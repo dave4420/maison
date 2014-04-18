@@ -63,15 +63,18 @@ executable maison
                      , base
                      , blaze-html
                      , bytestring
+                     , case-insensitive
                      , conduit
                      , containers
                      , directory
+                     , dns
                      , errors
                      , exceptions
                      , filepath
                      , hledger-lib
                      , hslogger == 1.2.*
                      , lens
+                     , network
                      , old-locale
                      , pandoc == 1.12.*
                      , process-conduit
