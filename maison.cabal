@@ -25,25 +25,29 @@ library
                      , Http.Sites
                      , Http.Uri
   -- other-extensions:    
-  --TODO: attoparsec-0.11 is available
-  build-depends:       attoparsec == 0.10.*
+  build-depends:       attoparsec >= 0.10
                      , base
                      , base64-bytestring == 1.0.*
                      , blaze-builder
                      , blaze-html == 0.7.*
                      , bytestring
-                     , conduit == 1.0.*
+                     , conduit >= 1.0
                      , containers
                      , errors == 1.4.*
-                     , exceptions == 0.3.*
+                     , exceptions >= 0.3
                      , http-types
-                     , lens == 3.10.*
                      , mtl
                      , network == 2.4.*
-                     , semigroups == 0.12.*
-                     , text
+                     , semigroups >= 0.12
+                     , text >= 1.0
                      , transformers
                      , wai == 2.0.*
+  if impl(ghc >= 7.8)
+      build-depends:   exceptions == 0.6.*
+                     , lens == 4.1.*
+  else
+      build-depends:   exceptions == 0.3.*
+                     , lens == 3.10.*
   hs-source-dirs:      src
   default-language:    Haskell2010
   default-extensions:  OverloadedStrings
@@ -76,13 +80,13 @@ executable maison
                      , lens
                      , network
                      , old-locale
-                     , pandoc == 1.12.*
+                     , pandoc >= 1.12
                      , process-conduit
                      , semigroups
-                     , text == 1.0.*
+                     , text
                      , time
                      , unix
-                     , warp == 2.0.*
+                     , warp
   hs-source-dirs:      maison
   default-language:    Haskell2010
   default-extensions:  TemplateHaskell
@@ -91,6 +95,8 @@ executable maison
                      , LambdaCase
                      , RankNTypes
   GHC-Options:         -Wall -Werror -rtsopts -with-rtsopts=-T -threaded
+  if impl(ghc >= 7.8)
+      buildable:       False
 
   main-is:             Main.hs
   -- other-modules:       
@@ -103,10 +109,10 @@ executable maison
                      , lens
                      , old-locale
                      , template-haskell
-                     , text == 1.0.*
+                     , text
                      , time
                      , unix
-                     , warp == 2.0.*
+                     , warp
   hs-source-dirs:      chateau
   default-language:    Haskell2010
   default-extensions:  RecordWildCards

@@ -1,3 +1,5 @@
+{-# LANGUAGE CPP #-}
+
 module Http (
         -- * Sites
         Site, Site',
@@ -161,9 +163,17 @@ sealSiteNoAuth = sealSite . (fmap . fmap . liftM) QA.noAuth
 
 
 instance X.MonadCatch m => X.MonadCatch (EitherT e m) where
-        throwM = lift . X.throwM
         catch main recover
                 = EitherT $ X.catch (runEitherT main) (runEitherT . recover)
+
+#if MIN_VERSION_exceptions(0,4,0)
+instance X.MonadThrow m => X.MonadThrow (EitherT e m) where
+#endif
+        throwM = lift . X.throwM
+
+#if MIN_VERSION_exceptions(0,6,0)
+instance X.MonadMask m => X.MonadMask (EitherT e m) where
+#endif
         mask = liftMask EitherT runEitherT X.mask
         uninterruptibleMask = liftMask EitherT runEitherT X.uninterruptibleMask
 
@@ -189,8 +199,14 @@ parseMethod _      = Nothing
 
 
 newtype HttpT m a = HttpT (EitherT UglyStatus (ReaderT Request m) a)
-    deriving (Functor, Applicative, Monad, X.MonadCatch, MonadReader Request,
-              MonadIO)
+    deriving (Functor, Applicative, Monad, MonadIO, MonadReader Request,
+#if MIN_VERSION_exceptions(0,4,0)
+              X.MonadThrow,
+#endif
+#if MIN_VERSION_exceptions(0,6,0)
+              X.MonadMask,
+#endif
+              X.MonadCatch)
 
 instance MonadTrans HttpT where
         lift = HttpT . lift . lift
