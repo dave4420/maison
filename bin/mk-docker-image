@@ -1,0 +1,103 @@
+#!/bin/bash
+set -e
+set -o pipefail
+
+die() {
+    printf "$@" >&2
+    exit 2
+}
+
+copy_stdin() {
+    local dest="$1"
+    local nf_dest="$nd_docker/root$dest"
+    mkdir -p "$(dirname "$nf_dest")"
+    cat >"$nf_dest"
+}
+
+copy_file() {
+    local src="$1"
+    local dest="$2"
+    if ! [[ -f "$src" ]] ; then
+        die "Can't find %s file\n" "$src"
+    fi
+    local nf_dest="$nd_docker/root$dest"
+    mkdir -p "$(dirname "$nf_dest")"
+    cp "$src" "$nf_dest"
+}
+
+copy_binary() {
+    local src="$1"
+    local dest="$2"
+    if ! [[ -x "$src" ]] ; then
+        die "Can't find %s binary\n" "$src"
+    fi
+    copy_file "$src" "$dest"
+    for lib in $(ldd "$src" | perl -ne 'print "$1\n" if m=\s(/\S+)\s\(=') ; do
+        copy_file "$lib" "$lib"
+    done
+}
+
+cd "$(git rev-parse --show-toplevel)"
+
+hs18 build
+
+readonly nd_build=(.sandboxen/*/dist/build)
+if [[ "${#nd_build[@]}" != 1 ]] ; then
+    die "Was expecting 1 subdirectory of .sandboxen, but found %d\n" \
+        "${#nd_build[@]}"
+fi
+
+nds_docker=()
+on_exit() {
+    rm -rf "${nds_docker[@]}"
+}
+trap on_exit EXIT
+
+tags=()
+tag() {
+    tags=("${tags[@]}" "$1")
+    nd_docker="$1.docker"
+    nds_docker=("${nds_docker[@]}" "$nd_docker")
+    rm -rf "$nd_docker"
+}
+
+readonly app="$1"
+readonly nf_src_daemon="$nd_build/$app/$app"
+readonly nf_daemon="/bin/daemon"
+
+
+if false ; then
+# My ghc-compiled binary exhausts all memory before running my code proper.
+# No idea why.
+tag busybox
+copy_binary "$nf_src_daemon" "$nf_daemon"
+cat <<EOF | copy_stdin "/../Dockerfile"
+FROM busybox
+MAINTAINER $(getent passwd "$(id -un)" | cut -d ':' -f 5 | cut -d ',' -f 1)
+ADD root /
+RUN { grep -E '^[^#t]' /etc/inittab ; echo ::respawn:su -s $nf_daemon daemon ; } >/etc/inittab.new ; mv /etc/inittab.new /etc/inittab
+USER root
+# no ENTRYPOINT
+CMD ["/bin/busybox", "init"]
+EXPOSE 3000
+EOF
+fi
+
+tag trusty
+# Default init system in trusty, upstart, reportedly does not work under docker.
+copy_binary "$nf_src_daemon" "$nf_daemon"
+cat <<EOF | copy_stdin "/../Dockerfile"
+FROM ubuntu:trusty
+MAINTAINER $(getent passwd "$(id -un)" | cut -d ':' -f 5 | cut -d ',' -f 1)
+ADD root /
+USER daemon
+ENV LANG en_GB.UTF-8
+# no ENTRYPOINT
+CMD ["$nf_daemon"]
+EXPOSE 3000
+EOF
+
+for tag in "${tags[@]}" ; do
+    sudo docker.io build -t "$app:$tag" "$tag.docker"
+done
+
