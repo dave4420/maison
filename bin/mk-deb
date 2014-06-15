@@ -1,0 +1,52 @@
+#!/bin/bash
+set -e
+set -o pipefail
+
+die() {
+    printf "$@" >&2
+    exit 2
+}
+
+
+cd "$(git rev-parse --show-toplevel)"
+hs18 build
+
+readonly nd_build=(.sandboxen/*/dist/build)
+if [[ "${#nd_build[@]}" != 1 ]] ; then
+    die "Was expecting 1 subdirectory of .sandboxen, but found %d\n" \
+        "${#nd_build[@]}"
+fi
+
+on_exit() {
+    rm -rf package
+}
+trap on_exit EXIT
+
+
+for orig in maison chateau ; do
+    rm -rf package
+    mkdir -p pkg package/{usr/bin,etc/init,DEBIAN}
+    cp "$nd_build/$orig/$orig" "package/usr/bin/dave4420-$orig"
+    cat >"package/etc/init/dave4420-$orig" <<EOF
+description "$orig custom webserver"
+author "Dave <beakerchu@googlemail.com>"
+start on (local-filesystems and net-device-up)
+stop on runlevel [!2345]
+respawn
+env LANG=en_GB.UTF-8
+exec /usr/bin/dave4420-$orig daemon
+EOF
+    cat >package/DEBIAN/control <<EOF
+Package: dave4420-$orig
+Priority: optional
+Section: web
+Installed-size: 10000
+Maintainer: Dave Hinton
+Architecture: amd64
+Version: $(date +'%Y.%m.%d.%H.%M')
+Depends: libc6, zlib1g, libgmp10
+Description: $orig custom web server.
+EOF
+    # Installed-size is in K
+    fakeroot dpkg-deb -z8 -Zgzip --build package pkg
+done
