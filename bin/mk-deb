@@ -8,6 +8,16 @@ die() {
 }
 
 
+readonly dist="$(lsb_release -si)"
+readonly dist_version_name="$(lsb_release -sc)"
+case "$dist-$dist_version_name" in
+    Ubuntu-trusty)      readonly dist_version_number=12.04 ;;
+    Ubuntu-precise)     readonly dist_version_number=14.04 ;;
+    *)                  die 'Unknown OS version: %s-%s\n' \
+                            "$dist" "$dist_version_name" ;;
+esac
+
+
 cd "$(git rev-parse --show-toplevel)"
 hs18 build
 
@@ -23,10 +33,15 @@ on_exit() {
 trap on_exit EXIT
 
 
-for orig in maison chateau ; do
+build-deb-for-binary() {
+    local -r orig="$1"
+    local -r nf_orig="$nd_build/$orig/$orig"
+    if ! [[ -x "$nf_orig" ]] ; then
+        return
+    fi
     rm -rf package
     mkdir -p pkg package/{usr/bin,etc/init,DEBIAN}
-    cp "$nd_build/$orig/$orig" "package/usr/bin/dave4420-$orig"
+    cp "$nf_orig" "package/usr/bin/dave4420-$orig"
     cat >"package/etc/init/dave4420-$orig" <<EOF
 description "$orig custom webserver"
 author "Dave <beakerchu@googlemail.com>"
@@ -43,10 +58,15 @@ Section: web
 Installed-size: 10000
 Maintainer: Dave Hinton
 Architecture: amd64
-Version: $(date +'%Y.%m.%d.%H.%M')
+Version: $dist_version_number.$(date +'%Y%m%d.%H%M')
 Depends: libc6, zlib1g, libgmp10
 Description: $orig custom web server.
 EOF
     # Installed-size is in K
     fakeroot dpkg-deb -z8 -Zgzip --build package pkg
+}
+
+
+for orig in maison chateau ; do
+    build-deb-for-binary "$orig"
 done
