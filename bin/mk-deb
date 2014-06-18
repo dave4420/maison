@@ -16,6 +16,7 @@ case "$dist-$dist_version_name" in
     *)                  die 'Unknown OS version: %s-%s\n' \
                             "$dist" "$dist_version_name" ;;
 esac
+readonly build_version_number="$(date +'%Y%m%d.%H%M')"
 
 
 cd "$(git rev-parse --show-toplevel)"
@@ -33,12 +34,29 @@ on_exit() {
 trap on_exit EXIT
 
 
+dynamic-libraries() {
+    for binary ; do
+        ldd "$binary"
+    done | perl -ne 'print "$1\n" if m=\s(/\S+)\s\(='
+}
+
+package-providing-file() {
+    for nf ; do
+        dpkg-query --search "$nf"
+    done | perl -ne 'print "$1\n" if m=^(.*?):='
+}
+
 build-deb-for-binary() {
     local -r orig="$1"
     local -r nf_orig="$nd_build/$orig/$orig"
     if ! [[ -x "$nf_orig" ]] ; then
         return
     fi
+    local -ra depends_libraries=($(dynamic-libraries "$nf_orig"))
+    local -ra \
+        depends_packages=($(package-providing-file "${depends_libraries[@]}" |
+                            sort -u))
+    local -r depends_field="$( (IFS=, ; echo "${depends_packages[*]}") )"
     rm -rf package
     mkdir -p pkg package/{usr/bin,etc/init,DEBIAN}
     cp "$nf_orig" "package/usr/bin/dave4420-$orig"
@@ -51,15 +69,16 @@ respawn
 env LANG=en_GB.UTF-8
 exec /usr/bin/dave4420-$orig daemon
 EOF
+    local -ri file_size="$(cat $(find package -type f) | wc -c)"
     cat >package/DEBIAN/control <<EOF
 Package: dave4420-$orig
 Priority: optional
 Section: web
-Installed-size: 10000
+Installed-size: $(( (file_size + 1023) / 1024 ))
 Maintainer: Dave Hinton
 Architecture: amd64
-Version: $dist_version_number.$(date +'%Y%m%d.%H%M')
-Depends: libc6, zlib1g, libgmp10
+Version: $dist_version_number.$build_version_number
+Depends: $depends_field
 Description: $orig custom web server.
 EOF
     # Installed-size is in K
