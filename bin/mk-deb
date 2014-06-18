@@ -60,7 +60,7 @@ build-deb-for-binary() {
     rm -rf package
     mkdir -p pkg package/{usr/bin,etc/init,DEBIAN}
     cp "$nf_orig" "package/usr/bin/dave4420-$orig"
-    cat >"package/etc/init/dave4420-$orig" <<EOF
+    cat >"package/etc/init/dave4420-$orig.conf" <<EOF
 description "$orig custom webserver"
 author "Dave <beakerchu@googlemail.com>"
 start on (local-filesystems and net-device-up)
