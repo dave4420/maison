@@ -52,6 +52,7 @@ build-deb-for-binary() {
     if ! [[ -x "$nf_orig" ]] ; then
         return
     fi
+    local -r service="dave4420-$orig"
     local -ra depends_libraries=($(dynamic-libraries "$nf_orig"))
     local -ra \
         depends_packages=($(package-providing-file "${depends_libraries[@]}" |
@@ -59,8 +60,8 @@ build-deb-for-binary() {
     local -r depends_field="$( (IFS=, ; echo "${depends_packages[*]}") )"
     rm -rf package
     mkdir -p pkg package/{usr/bin,etc/init,DEBIAN}
-    cp "$nf_orig" "package/usr/bin/dave4420-$orig"
-    cat >"package/etc/init/dave4420-$orig.conf" <<EOF
+    cp "$nf_orig" "package/usr/bin/$service"
+    cat >"package/etc/init/$service.conf" <<EOF
 description "$orig custom webserver"
 author "Dave <beakerchu@googlemail.com>"
 start on (local-filesystems and net-device-up)
@@ -81,6 +82,17 @@ Version: $dist_version_number.$build_version_number
 Depends: $depends_field
 Description: $orig custom web server.
 EOF
+    cat >package/DEBIAN/prerm <<EOF
+#!/bin/bash
+set -e
+service $service stop || true
+EOF
+    cat >package/DEBIAN/postinst <<EOF
+#!/bin/bash
+set -e
+service $service start
+EOF
+    chmod 755 package/DEBIAN/{postinst,prerm}
     # Installed-size is in K
     fakeroot dpkg-deb -z8 -Zgzip --build package pkg
 }
