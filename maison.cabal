@@ -75,7 +75,7 @@ executable maison
                      , errors
                      , exceptions
                      , filepath
-                     , hledger-lib
+                     , hledger-lib == 0.22.*
                      , hslogger == 1.2.*
                      , lens
                      , network
@@ -95,8 +95,6 @@ executable maison
                      , LambdaCase
                      , RankNTypes
   GHC-Options:         -Wall -Werror -rtsopts -with-rtsopts=-T -threaded
-  if impl(ghc >= 7.8)
-      buildable:       False
 
   main-is:             Main.hs
   -- other-modules:       
