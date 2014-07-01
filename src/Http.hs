@@ -6,6 +6,7 @@ module Http (
         Sites, Sites',
         singleSite, singleSitePort,
         underSite, underSitePort,
+        underPath,
         -- * Auth
         Auth, Auth',
         AuthChallenge, AuthChallenge',
@@ -77,6 +78,7 @@ import           Network.Socket (SockAddr(..))
 
 -- semigroups
 import           Data.List.NonEmpty (NonEmpty(..), nonEmpty)
+import qualified Data.List.NonEmpty            as SG
 
 -- transformers
 import           Control.Monad.IO.Class
@@ -101,6 +103,15 @@ singleSitePort, underSitePort
         :: Monad m => ByteString -> Int -> Site' m -> Sites' m
 singleSitePort = QS.singleSitePort
 underSitePort = QS.underSitePort
+
+underPath :: Monad m => Path -> Site' m -> Site' m
+underPath leadingPath = QS.underPath leadingPath redirect where
+        redirect = sealSite $ \_ query
+                -> return . noAuth . missingResource
+                   $ missingBecause
+                     .~ QR.Moved
+                        QR.Permanently
+                        (RelUri (RelPath 1 $ SG.last leadingPath :| [""]) query)
 
 
 type Auth = Auth' HttpIO

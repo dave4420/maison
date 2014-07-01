@@ -6,6 +6,8 @@ module Http.Sites (
         sealSite,
         atAuthority,
         atPathQuery,
+        underPath,
+        mapSitePath, siteResource,
 )
 where
 
@@ -15,6 +17,9 @@ import           Http.Uri
 
 -- base
 import           Control.Applicative
+import           Control.Monad
+import           Data.Function
+import           Data.List
 import           Data.Maybe
 import           Data.Monoid
 
@@ -85,10 +90,37 @@ atomiseHost :: ByteString -> NonEmpty ByteString
 atomiseHost = fromJust . nonEmpty . BC.split '.'
 
 
-newtype Site r m = Site (Path -> Query -> m (r m))
+newtype Site r m = Site {unSite :: Path -> Query -> Monadic m (r m)}
+    deriving Monoid
+
+siteI :: L.Iso' (Path -> Query -> Monadic m (r m)) (Site r m)
+siteI = L.iso Site unSite
 
 atPathQuery :: Monad m => Path -> Query -> L.Action m (Site r m) (r m)
-atPathQuery path query = L.act $ \(Site f) -> f path query
+atPathQuery path query = L.act $ \(Site f) -> unMonadic $ f path query
 
 sealSite :: (Path -> Query -> m (r m)) -> Site r m
-sealSite = Site
+sealSite = Site . (fmap . fmap) Monadic
+
+underPath :: (Monad m, Monoid (r m)) => Path -> Site r m -> Site r m -> Site r m
+underPath leadingPath (Site boundary) (Site inside) = Site g where
+        g path = maybe mempty
+                       (maybe boundary (const inside) . SG.nonEmpty)
+                       ((stripPrefix `on` SG.toList) leadingPath path)
+                 path
+
+mapSitePath :: (Path -> Path) -> Site r m -> Site r m
+mapSitePath f (Site g) = Site (g . f)
+
+siteResource :: Monad m => L.Setter' (Site r m) (r m)
+siteResource = L.from siteI . L.mapped . L.mapped . L.mapped
+
+
+newtype Monadic m a = Monadic {unMonadic :: m a}
+
+instance (Monad m, Monoid a) => Monoid (Monadic m a) where
+        mempty = Monadic $ return mempty
+        Monadic mx `mappend` Monadic my = Monadic $ mappend `liftM` mx `ap` my
+
+instance Monad m => Functor (Monadic m) where
+        fmap f (Monadic mx) = Monadic (liftM f mx)

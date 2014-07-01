@@ -16,13 +16,26 @@ import           Http.Uri
 -- lens
 import qualified Control.Lens                  as L
 
+-- semigroups
+import           Data.Semigroup
+
 
 data Resource r m
         = Missing (MissingResource r m)
         | Existing (ExistingResource r m)
 
-data MissingResource r m = MissingResource {
+instance Semigroup (Resource r m) where
+        x @ (Existing _) <> _ = x
+        _ <> y @ (Existing _) = y
+        Missing x <> Missing y = Missing (x <> y)
+
+instance Monad m => Monoid (Resource r m) where
+        mempty = missingResource id
+        mappend = (<>)
+
+newtype MissingResource r m = MissingResource {
         _missingBecause :: MissingBecause r m}
+    deriving Semigroup
 
 data MissingBecause r m
         = Moved Transience RelUri
@@ -31,11 +44,17 @@ data MissingBecause r m
 data Transience = Permanently | Temporarily
 data NotFound = Gone | NeverExisted
 
+instance Semigroup (MissingBecause r m) where
+        x @ (Moved Permanently _) <> _ = x
+        _ <> y @ (Moved Permanently _) = y
+        x @ (Moved Temporarily _) <> _ = x
+        _ <> y @ (Moved Temporarily _) = y
+        x @ (NotFound Gone _) <> _ = x
+        _ <> y @ (NotFound Gone _) = y
+        x <> _ = x
+
 data ExistingResource r m = ExistingResource {
         _existingGet :: Maybe (m r)}
-
-$(L.makeLenses ''MissingResource)
-$(L.makeLenses ''ExistingResource)
 
 missingResource :: Monad m =>
                    (MissingResource r m -> MissingResource r m) ->
@@ -54,3 +73,6 @@ eitherResource :: (MissingResource r m -> a) ->
                   a
 eitherResource f _ (Missing x) = f x
 eitherResource _ g (Existing y) = g y
+
+$(L.makeLenses ''MissingResource)
+$(L.makeLenses ''ExistingResource)

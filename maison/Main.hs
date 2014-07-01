@@ -1,10 +1,12 @@
 import           FileTree
+import           PageSite
 
 -- base
 import qualified Control.Exception         as X
 import           Control.Monad
 import qualified Data.Foldable             as F
 import           Data.Maybe
+import           Data.Monoid
 import           System.Environment
 import           System.Exit
 
@@ -60,6 +62,9 @@ dropPrivs nUser = do
 
 
 sites :: Sites
-sites = F.foldMap (`singleSite` multiUserFileTreeSite "Dionysus"
-                                                      ["dave", "faith"])
+sites = F.foldMap (`singleSite` (multiUserFileTreeSite "Dionysus"
+                                                       ["dave", "faith"]
+                                 <> underPath
+                                    ("pages" :| [])
+                                    (pageSite "/home/dave/tmp/pages")))
                   ["dionysus", "dionysus.lan"]

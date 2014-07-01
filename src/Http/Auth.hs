@@ -1,4 +1,4 @@
-{-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE KindSignatures, FlexibleContexts #-}
 
 module Http.Auth where
 
@@ -37,6 +37,18 @@ type Password = ByteString
 
 data AuthResponse
         = BasicResp Username Password
+
+instance Monoid (r e m) => Monoid (Auth r e m) where
+        mempty = NoAuth mempty
+        x @ AuthRequired{} `mappend` _ = x
+        _ `mappend` y @ AuthRequired{} = y
+        NoAuth x `mappend` NoAuth y = NoAuth (x `mappend` y)
+
+instance Monoid (r e m) => Monoid (AuthResult r e m) where
+        mempty = OK mempty
+        x @ (Forbidden _) `mappend` _ = x
+        _ `mappend` y @ (Forbidden _) = y
+        OK x `mappend` OK y = OK (x `mappend` y)
 
 
 renderChallenges :: [AuthChallenge r e m] -> ByteString
