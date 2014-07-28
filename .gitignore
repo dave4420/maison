@@ -1,3 +1,4 @@
 /.sandboxen/
 /cabal.sandbox.config
 /pkg/
+*.nix
