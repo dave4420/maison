@@ -67,4 +67,4 @@ sites = F.foldMap (`singleSite` (multiUserFileTreeSite "Dionysus"
                                  <> underPath
                                     ("pages" :| [])
                                     (pageSite "/home/dave/tmp/pages")))
-                  ["dionysus", "dionysus.lan"]
+                  ["dionysus", "dionysus.lan", "192.168.1.104"]
