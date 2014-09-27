@@ -32,10 +32,10 @@ main = do
         args <- getArgs
         let port = if null args then 3000 else 80
         when (not . null $ args) initLoggingForDaemon
-        WARP.runSettings WARP.defaultSettings {
-                WARP.settingsPort = port,
-                WARP.settingsBeforeMainLoop = maybe (return ()) dropPrivs
-                                              $ listToMaybe args}
+        WARP.runSettings (WARP.setPort port
+                          . WARP.setBeforeMainLoop (maybe (return ()) dropPrivs
+                                                    $ listToMaybe args)
+                          $ WARP.defaultSettings)
             . waiApplication Http
             $ (settingsSites .~ sites)
               . (settingsOnException

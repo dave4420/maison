@@ -2,7 +2,11 @@ module TextFile (textFileResource) where
 
 import           Page
 
+-- async
+import           Control.Concurrent.Async
+
 -- base
+import           Control.Applicative
 import           Control.Monad
 import           Data.Char
 import qualified Data.Foldable               as F
@@ -26,15 +30,15 @@ import qualified Data.ByteString.Lazy        as BL
 import           Data.Conduit
 import           Data.Conduit.List (consume)
 
+-- conduit-extra
+import           Data.Conduit.Process
+
 -- lens
 import qualified Control.Lens                as L
 import           Control.Lens.Operators
 
 -- maison
 import           Http
-
--- process-conduit
-import           Data.Conduit.Process
 
 -- text
 import           Data.Text (Text)
@@ -109,6 +113,7 @@ textFileResource titles nf [] query = return . existingResource
               =<< liftIO (B.readFile nf))
     where
 
+        getPage :: MonadIO io => ByteString -> HttpT io Entity
         getPage bs = do
                 let t = T.decodeUtf8 bs
                     stats = fileStatistics t
@@ -118,18 +123,34 @@ textFileResource titles nf [] query = return . existingResource
                     . entityFromPage breadcrumbs
                     $ formFromPts pts <> htStats stats <> HT.pre (toHtml t)
 
-        getPdf bs = do
+        getPdf :: MonadIO io => ByteString -> HttpT io Entity
+        getPdf bs = liftIO $ do
                 let t = T.decodeUtf8 bs
                     stats = fileStatistics t
                     pts = lookupPtsDef $ defPts nf stats
+                ((toA2ps, closeToA2ps),
+                 (fromA2ps, closeFromA2ps),
+                 Inherited,
+                 hA2ps)
+                  <- streamingProcess (a2ps pts)
+                ((toPs2pdf, closeToPs2pdf),
+                 (fromPs2pdf, closeFromPs2pdf),
+                 Inherited,
+                 hPs2pdf)
+                  <- streamingProcess ps2pdf
                 fmap (entityFromLazyByteString "application/pdf"
                       . BL.fromChunks)
-                    . liftIO
-                    . runResourceT
-                    $ yield bs
-                      $= conduitProcess (a2ps pts)
-                      =$= conduitProcess ps2pdf
-                      $$ consume
+                    . runConcurrently
+                    $ closing hPs2pdf closeToPs2pdf closeFromPs2pdf
+                      *> closing hA2ps closeToA2ps closeFromA2ps
+                      *> Concurrently (yield bs $$ toA2ps)
+                      *> Concurrently (fromA2ps $$ toPs2pdf)
+                      *> Concurrently (fromPs2pdf $$ consume)
+            where
+                closing h closeTo closeFrom = Concurrently $ do
+                        _ <- waitForStreamingProcess h
+                        _ <- closeTo
+                        closeFrom
 
         lookupBS :: ByteString -> Maybe ByteString
         lookupBS key = join $ lookup key query

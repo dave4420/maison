@@ -103,12 +103,12 @@ balances breadcrumbs journal = liftIO $ do
                                  <> plRow (sum $ mapMaybe revenueExpense books)
             where
                 (books, _) = report today
-                revenueExpense ("revenue", _, _, amount) = Just amount
-                revenueExpense ("expense", _, _, amount) = Just amount
-                revenueExpense _                         = Nothing
+                revenueExpense (("revenue", _, _), amount) = Just amount
+                revenueExpense (("expense", _, _), amount) = Just amount
+                revenueExpense _                           = Nothing
 
         row :: LEDGER.BalanceReportItem -> Html
-        row (fullName, _shortName, _indent, amount)
+        row ((fullName, _shortName, _indent), amount)
                 = HT.tr
                   . mconcat
                   $ [HT.td ! AT.class_ (mconcat [bulletClass

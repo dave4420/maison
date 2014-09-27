@@ -1,3 +1,5 @@
+{-# LANGUAGE CPP #-}
+
 module DefMap (
         DefMap(),
         defAt,
@@ -22,7 +24,16 @@ import           Control.Lens.Operators
 newtype DefMap k v = DefMap (Maybe v, Map k v)
     deriving (Eq, Functor)
 
+#if MIN_VERSION_lens(4,4,0)
+
+defMap :: L.Iso' (Maybe v, Map k v) (DefMap k v)
+defMap = L.dimap DefMap (fmap (\(DefMap x) -> x))
+
+#else
+
 $(L.makeIso ''DefMap)
+
+#endif
 
 instance Ord k => Monoid (DefMap k v) where
         mempty = empty

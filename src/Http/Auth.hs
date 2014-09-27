@@ -3,8 +3,8 @@
 module Http.Auth where
 
 -- attoparsec
-import qualified Data.Attoparsec        as AB
-import qualified Data.Attoparsec.Char8  as ABC
+import qualified Data.Attoparsec.ByteString       as AB
+import qualified Data.Attoparsec.ByteString.Char8 as ABC
 
 -- base
 import           Control.Applicative
@@ -13,7 +13,7 @@ import           Data.List
 import           Data.Monoid
 
 -- base64-bytestring
-import qualified Data.ByteString.Base64 as B64
+import qualified Data.ByteString.Base64           as B64
 
 -- bytestring
 import           Data.ByteString (ByteString)

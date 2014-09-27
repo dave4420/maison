@@ -173,6 +173,9 @@ sealSiteNoAuth :: Monad m => (Path -> Query -> m (Resource' m)) -> Site' m
 sealSiteNoAuth = sealSite . (fmap . fmap . liftM) QA.noAuth
 
 
+#if MIN_VERSION_either(4,3,0)
+#else
+
 instance X.MonadCatch m => X.MonadCatch (EitherT e m) where
         catch main recover
                 = EitherT $ X.catch (runEitherT main) (runEitherT . recover)
@@ -181,6 +184,8 @@ instance X.MonadCatch m => X.MonadCatch (EitherT e m) where
 instance X.MonadThrow m => X.MonadThrow (EitherT e m) where
 #endif
         throwM = lift . X.throwM
+
+#endif
 
 #if MIN_VERSION_exceptions(0,6,0)
 instance X.MonadMask m => X.MonadMask (EitherT e m) where
@@ -259,8 +264,9 @@ waiApplication :: Protocol -> (Settings -> Settings) -> WAI.Application
 {- ^ Formalisation of
 <http://upload.wikimedia.org/wikipedia/commons/8/8a/Http-headers-status.svg>.
 -}
-waiApplication protocol f request
-        = uncurry (waiResponse $ method' == Just HEAD)
+waiApplication protocol f request giveResponse
+      = (giveResponse =<<)
+        $ uncurry (waiResponse $ method' == Just HEAD)
           <$> maybe (return . defaultUgly $ UglyStatus [] HTTP.badRequest400)
                     (\authority
                      -> runReaderT (eitherT (return . defaultUgly) return ermx)

@@ -1,3 +1,5 @@
+{-# LANGUAGE CPP #-}
+
 module Http.Entity (
         Entity(),
         concatResponseHeaders,
@@ -30,6 +32,14 @@ import           Data.Conduit
 
 -- http-types
 import qualified Network.HTTP.Types            as HTTP
+
+-- transformers
+
+#if MIN_VERSION_wai(3,0,0)
+
+import           Control.Monad.Trans.Class (lift)
+
+#endif
 
 -- text
 import           Data.Text (Text)
@@ -110,7 +120,30 @@ waiResponse omitBody status Entity{..}
                 EntityBodyFromBuilder builder
                  -> WAI.responseBuilder status headers builder
                 EntityBodyFromSource source
+
+#if MIN_VERSION_wai(3,0,0)
+
+                 -> WAI.responseStream status headers
+                    (streamingBodyFromSource source)
+
+#else
+
                  -> WAI.responseSource status headers source
+
+#endif
+
     where
         headers = concatMap unExtraHeader entityExtraHeaders
                   ++ [(HTTP.hContentType, entityType)]
+
+
+#if MIN_VERSION_wai(3,0,0)
+
+streamingBodyFromSource :: Source IO (Flush Z.Builder) -> WAI.StreamingBody
+streamingBodyFromSource source sendBuilder flush = source $$ sink where
+        sink = await >>= \case
+                Nothing              -> return ()
+                Just Flush           -> lift flush                 >> sink
+                Just (Chunk builder) -> lift (sendBuilder builder) >> sink
+
+#endif
