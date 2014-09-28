@@ -7,6 +7,7 @@ import           Control.Concurrent.Async
 
 -- base
 import           Control.Applicative
+import           Control.Exception (finally)
 import           Control.Monad
 import           Data.Char
 import qualified Data.Foldable               as F
@@ -44,6 +45,9 @@ import           Http
 import           Data.Text (Text)
 import qualified Data.Text                   as T
 import qualified Data.Text.Encoding          as T
+
+-- unix
+import           System.Posix.IO (createPipe, fdToHandle)
 
 
 data Statistics = Statistics {
@@ -128,29 +132,29 @@ textFileResource titles nf [] query = return . existingResource
                 let t = T.decodeUtf8 bs
                     stats = fileStatistics t
                     pts = lookupPtsDef $ defPts nf stats
+                (fdReader, fdWriter) <- createPipe
+                hReader <- fdToHandle fdReader
+                hWriter <- fdToHandle fdWriter
                 ((toA2ps, closeToA2ps),
-                 (fromA2ps, closeFromA2ps),
+                 UseProvidedHandle,
                  Inherited,
                  hA2ps)
-                  <- streamingProcess (a2ps pts)
-                ((toPs2pdf, closeToPs2pdf),
+                  <- streamingProcess (a2ps pts) {std_out = UseHandle hWriter}
+                (UseProvidedHandle,
                  (fromPs2pdf, closeFromPs2pdf),
                  Inherited,
                  hPs2pdf)
-                  <- streamingProcess ps2pdf
+                  <- streamingProcess ps2pdf {std_in = UseHandle hReader}
+                -- We don't need to close fdReader and fdWriter;
+                -- I don't know why.
                 fmap (entityFromLazyByteString "application/pdf"
                       . BL.fromChunks)
-                    . runConcurrently
-                    $ closing hPs2pdf closeToPs2pdf closeFromPs2pdf
-                      *> closing hA2ps closeToA2ps closeFromA2ps
-                      *> Concurrently (yield bs $$ toA2ps)
-                      *> Concurrently (fromA2ps $$ toPs2pdf)
-                      *> Concurrently (fromPs2pdf $$ consume)
-            where
-                closing h closeTo closeFrom = Concurrently $ do
-                        _ <- waitForStreamingProcess h
-                        _ <- closeTo
-                        closeFrom
+                     (runConcurrently
+                      $ Concurrently (waitForStreamingProcess hPs2pdf)
+                        *> Concurrently (waitForStreamingProcess hA2ps)
+                        *> Concurrently (yield bs >> closeToA2ps $$ toA2ps)
+                        *> Concurrently (fromPs2pdf $$ consume))
+                    `finally` closeFromPs2pdf
 
         lookupBS :: ByteString -> Maybe ByteString
         lookupBS key = join $ lookup key query
