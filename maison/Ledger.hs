@@ -16,6 +16,10 @@ import           Text.Blaze.Html
 import qualified Text.Blaze.Html5            as HT
 import qualified Text.Blaze.Html5.Attributes as AT
 
+-- containers
+import qualified Data.Map                    as M
+import qualified Data.Set                    as S
+
 -- hledger-lib
 import qualified Hledger                     as LEDGER
 
@@ -102,13 +106,16 @@ balances breadcrumbs journal = liftIO $ do
         table today = HT.table $ F.foldMap row books
                                  <> plRow (sum $ mapMaybe revenueExpense books)
             where
-                (books, _) = report today
-                revenueExpense (("revenue", _, _), amount) = Just amount
-                revenueExpense (("expense", _, _), amount) = Just amount
-                revenueExpense _                           = Nothing
+                books = inferBoringParents
+                        . (L.mapped . L._1 %~ L.view L._1)
+                        . fst
+                        $ report today
+                revenueExpense ("revenue", amount) = Just amount
+                revenueExpense ("expense", amount) = Just amount
+                revenueExpense _                   = Nothing
 
-        row :: LEDGER.BalanceReportItem -> Html
-        row ((fullName, _shortName, _indent), amount)
+        row :: (String, LEDGER.MixedAmount) -> Html
+        row (fullName, amount)
                 = HT.tr
                   . mconcat
                   $ [HT.td ! AT.class_ (mconcat [bulletClass
@@ -223,6 +230,24 @@ transactions breadcrumbs journal acName = liftIO $ do
             where
                 (balance, tag) = formatAmountWithTag amount
                 fmtDate = formatTime defaultTimeLocale "%e %B %Y"
+
+
+inferBoringParents :: [(String, LEDGER.MixedAmount)] ->
+                      [(String, LEDGER.MixedAmount)]
+inferBoringParents = M.toList . infer . M.fromList where
+        infer m = M.fromSet value . F.foldMap ancestors . M.keysSet $ m where
+                value key = fromMaybe (sum' . filter' $ m) $ m ^. L.at key where
+                        filter' = M.filterWithKey (\k _ -> key' `isPrefixOf` k)
+                        key' = key ++ ":"
+                        sum' = getSum . F.foldMap Sum
+                ancestors = S.fromList
+                            . map (intercalate ":")
+                            . tail
+                            . inits
+                            . splitOn ':'
+        splitOn x ys = case break (== x) ys of
+                (z, [])     -> [z]
+                (z, _ : as) -> z : splitOn x as
 
 
 data FormattedAmount
