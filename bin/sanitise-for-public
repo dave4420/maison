@@ -1,0 +1,22 @@
+#!/bin/bash
+set -euo pipefail
+IFS=$'\n\t'
+
+tmp="$(mktemp --tmpdir -d)"
+tmprepo="$tmp/repo"
+
+onexit() {
+    rm -rf "$tmp"
+}
+trap onexit EXIT
+
+git clone "$(dirname "$0")/.." "$tmprepo"
+cd "$tmprepo"
+
+git filter-branch --tree-filter '
+    rm -rf chateau
+    perl -ni -e "print unless /^executable\s+chateau/ .. /^\S/" maison.cabal
+' HEAD
+
+git remote add github github:dave4420/maison.git
+git push github master
