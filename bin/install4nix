@@ -1,0 +1,64 @@
+#!/bin/bash
+# <http://redsymbol.net/articles/unofficial-bash-strict-mode/>
+set -euo pipefail
+IFS=$'\n\t'
+
+die() {
+    printf "$@" >&2
+    exit 2
+}
+
+
+permitted_services=(maison chateau)
+desired_services=()
+
+while [[ ${#@} -gt 0 ]] ; do
+    case "$1" in
+        maison|chateau)
+            if [[ ${#desired_services[@]} -gt 0 ]] ; then
+                desired_services=("${desired_services[@]}" "$1")
+            else
+                desired_services=("$1")
+            fi
+            ;;
+        *)
+            die 'Unrecognised argument '\''%s'\''\n' "$1"
+            ;;
+    esac
+    shift
+done
+
+
+services() {
+    for service in "${permitted_services[@]}" ; do
+        if [[ -e /etc/init/dave4420-$service.conf ]] ; then
+            sudo service dave4420-$service "$@"
+        fi
+    done
+}
+
+
+services stop
+
+sudo mkdir -p /usr/local/dave4420
+sudo chmod 775 /usr/local/dave4420
+sudo chown root:dave /usr/local/dave4420
+
+cabal2nix4dev
+nix-build --out-link /usr/local/dave4420/maison
+
+if [[ ${#desired_services[@]} -gt 0 ]] ; then
+    for service in "${desired_services[@]}" ; do
+        sudo tee /etc/init/dave4420-$service.conf >/dev/null <<UPSTART
+description "$service webserver"
+author "Dave <beakerchu@googlemail.com>"
+start on (local-filesystems and net-device-up)
+stop on runlevel [!2345]
+respawn
+env LANG=en_GB.UTF-8
+exec /usr/local/dave4420/maison/bin/$service daemon
+UPSTART
+    done
+fi
+
+services start
